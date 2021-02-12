@@ -1,0 +1,30 @@
+{
+    "classes": [
+        {
+            "title": "COVID-19",
+            "shape": "bitmap",
+            "color": "#21D374",
+            "geometry_config": {},
+            "id": 2721830,
+            "hotkey": "Q"
+        },
+        {
+            "title": "Pneumonia",
+            "shape": "bitmap",
+            "color": "#F8E71C",
+            "geometry_config": {},
+            "id": 2721857,
+            "hotkey": "W"
+        },
+        {
+            "title": "Other",
+            "shape": "bitmap",
+            "color": "#D188E0",
+            "geometry_config": {},
+            "id": 2721884,
+            "hotkey": "E"
+        }
+    ],
+    "tags": [],
+    "projectType": "images"
+}
