@@ -1,0 +1,6 @@
+wdir: ../dataset
+outs:
+- md5: 15e11d9ab887151703ee966a7bb79c30.dir
+  size: 505346939
+  nfiles: 876
+  path: COVID-19-Radiography-Database
