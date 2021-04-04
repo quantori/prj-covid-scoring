@@ -1,0 +1,10 @@
+script: run_classifier.py
+hyperparameters:
+  epochs: 1
+  batch_size: 15
+inputs:
+  covid_scoring_metadata_dir: s3://qtr-ml-projects/prj-covid-scoring/dataset/metadata/covid_scoring_metadata.csv
+  source_ds_dir: s3://qtr-ml-projects/prj-covid-scoring/dataset/source_ds/
+dependencies:
+   - tools
+   - requirements.txt

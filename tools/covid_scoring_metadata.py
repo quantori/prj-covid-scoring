@@ -1,7 +1,8 @@
 import argparse
 import os
-from tools.DataProcessingTools import map_img_cvd_score, path_without_extension
 import pandas as pd
+from tqdm import tqdm
+from tools.DataProcessingTools import map_img_cvd_score, path_without_extension
 
 
 def create_score_values(row, dataset_name, score_value_dict):
@@ -30,7 +31,7 @@ def create_cvd_scoring_metadata(covid_scoring_dataset, datasets_info, output_fil
     full_datasets_paths = [os.path.join(covid_scoring_dataset, path) for path in os.listdir(covid_scoring_dataset)
                            if os.path.isdir(os.path.join(covid_scoring_dataset, path))]
     datasets_info['score'] = None
-    for full_dataset_path in full_datasets_paths:
+    for full_dataset_path in tqdm(full_datasets_paths):
         dataset_name = full_dataset_path.split(os.sep)[-1]
         full_ann_dir = os.path.join(full_dataset_path, 'ann')
         score_value_dict = {}
