@@ -5,6 +5,92 @@ import cv2
 import torch
 from torch.utils.data.sampler import SubsetRandomSampler
 import numpy as np
+import hashlib
+
+
+def path_without_extension(path):
+    extensions = ['.tif', '.jpg', '.jpeg', '.png', '.tiff', '.json', '.txt', '.csv', 'xlsx']
+    while True:
+        base, ext = os.path.splitext(path)
+        if ext not in extensions:
+            return path
+        path = base
+
+
+def create_fig_1_filename(row, full_img_dir):
+    filename = find_str_of_substr(os.listdir(full_img_dir), row['patientid'])
+    row['filename'] = filename
+    return row
+
+
+def calculate_hash(row):
+    img = cv2.imread(row['full_path'], 0)
+    hash_val = 'no hash'
+    if img is not None:
+        hash_val = hashlib.md5(img).hexdigest()
+    else:
+        logging.warning('img: ' + row['full_path'] + 'couldn\'t be found')
+    return hash_val
+
+
+def filter_metadata_df(source_df, accepted_views, label_array):
+    resulted_df = source_df[source_df['view'].isin(accepted_views) &
+                            (source_df['modality'] == 'X-ray') &
+                            source_df['finding'].isin(label_array)].copy(deep=True)
+
+    return resulted_df
+
+
+def return_norm_covid_pneumonia_df_metadata(source_df, accepted_views, normal_labels, pneumonia_labels, covid_labels):
+    normal_df = filter_metadata_df(source_df, accepted_views, normal_labels)
+    normal_df['diagnosis'] = 'normal'
+    normal_df['label'] = 0
+
+    pneumonia_df = filter_metadata_df(source_df, accepted_views, pneumonia_labels)
+    pneumonia_df['diagnosis'] = 'pneumonia'
+    pneumonia_df['label'] = 1
+
+    covid_df = filter_metadata_df(source_df, accepted_views, covid_labels)
+    covid_df['diagnosis'] = 'covid-19'
+    covid_df['label'] = 2
+    return normal_df, covid_df, pneumonia_df
+
+
+def remove_duplicate_imgs_from_metadata_df(df):
+    df['hash'] = df.apply(lambda row: calculate_hash(row), axis=1)
+    df = df[df['hash'] != 'no hash']
+    duplicated_samples = df.duplicated(subset=['hash'], keep='first')
+    df = df[~duplicated_samples]
+    return df
+
+
+def find_str_of_substr(search_array, substr):
+    for item in search_array:
+        if item.find(substr) != -1:
+            return item
+    return None
+
+
+def return_covid_score(json_file):
+    labeler_score = {'JohnDoe': None, 'RenataS': None}
+    for obj in json_file['objects']:
+        for tag in obj['tags']:
+            if tag['name'] != 'Score':
+                continue
+            labeler_score[tag['labelerLogin']] = int(tag['value'])
+    img_score = labeler_score['JohnDoe'] if labeler_score['JohnDoe'] is not None else labeler_score['RenataS']
+    return img_score
+
+
+def map_img_cvd_score(full_ann_dir):
+    img_cvd_score = {}
+    for ann in os.listdir(full_ann_dir):
+        full_ann_path = os.path.join(full_ann_dir, ann)
+        img_name = os.path.splitext(ann)[0]
+        with open(full_ann_path) as f:
+            data = json.load(f)
+        img_cvd_score[img_name] = return_covid_score(data)
+    return img_cvd_score
 
 
 def create_img_ann_tuple(img_dir, ann_dir):
@@ -28,7 +114,6 @@ def create_img_ann_tuple(img_dir, ann_dir):
 
 def split_dataset(dataset, data_dist_dict, random_seed=12):
     indices = list(range(len(dataset)))
-
     np.random.seed(random_seed)
     np.random.shuffle(indices)
 
@@ -47,7 +132,6 @@ def split_dataset(dataset, data_dist_dict, random_seed=12):
         data_dist_dict[data_dist]['dataset'] = torch.utils.data.DataLoader(dataset,
                                                 batch_size=data_dist_dict[data_dist]['batch_size'],
                                                 sampler=data_dist_sampler)
-
     return data_dist_dict
 
 
