@@ -6,6 +6,7 @@ import torch
 from torch.utils.data.sampler import SubsetRandomSampler
 import numpy as np
 import hashlib
+import pandas as pd
 
 
 def path_without_extension(path):
@@ -71,15 +72,14 @@ def find_str_of_substr(search_array, substr):
     return None
 
 
-def return_covid_score(json_file):
+def extract_covid_scores(json_file):
     labeler_score = {'JohnDoe': None, 'RenataS': None}
     for obj in json_file['objects']:
         for tag in obj['tags']:
             if tag['name'] != 'Score':
                 continue
             labeler_score[tag['labelerLogin']] = int(tag['value'])
-    img_score = labeler_score['JohnDoe'] if labeler_score['JohnDoe'] is not None else labeler_score['RenataS']
-    return img_score
+    return labeler_score
 
 
 def map_img_cvd_score(full_ann_dir):
@@ -89,27 +89,20 @@ def map_img_cvd_score(full_ann_dir):
         img_name = os.path.splitext(ann)[0]
         with open(full_ann_path) as f:
             data = json.load(f)
-        img_cvd_score[img_name] = return_covid_score(data)
+        img_cvd_score[img_name] = extract_covid_scores(data)
     return img_cvd_score
 
 
-def create_img_ann_tuple(img_dir, ann_dir):
-    all_imgs = os.listdir(img_dir)
-    all_anns = os.listdir(ann_dir)
-    img_ann_tuple = []
-    for img in all_imgs:
-        corresponding_ann = img + '.json'
-        assert corresponding_ann in all_anns, '{} annotation not found'.format(corresponding_ann)
-        full_img_path = os.path.join(img_dir, img)
-        full_ann_path = os.path.join(ann_dir, corresponding_ann)
+def read_csv(path):
+    df = pd.read_csv(path)
+    return df
 
-        with open(full_ann_path) as f:
-            data = json.load(f)
-            if len(data['objects']) == 0:
-                continue
 
-        img_ann_tuple.append((full_img_path, full_ann_path))
-    return img_ann_tuple
+def clf_next_element(df, idx):
+    img_full_path = df.iloc[[idx]]['full_path'].values[0]
+    label = df.iloc[[idx]]['score'].values[0]
+    img = cv2.imread(img_full_path)
+    return img, label
 
 
 def split_dataset(dataset, data_dist_dict, random_seed=12):
@@ -133,16 +126,6 @@ def split_dataset(dataset, data_dist_dict, random_seed=12):
                                                 batch_size=data_dist_dict[data_dist]['batch_size'],
                                                 sampler=data_dist_sampler)
     return data_dist_dict
-
-
-def labels_for_classification(mapping):
-    def labels_for_classification_(full_ann_path):
-        with open(full_ann_path) as f:
-            data = json.load(f)
-            class_type = mapping.get(data['objects'][0]['classTitle'], 0)
-            return class_type
-
-    return labels_for_classification_
 
 
 class ToTensor(object):
