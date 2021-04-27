@@ -25,7 +25,7 @@ def create_fig_1_filename(row, full_img_dir):
 
 
 def calculate_hash(row):
-    img = cv2.imread(row['full_path'], 0)
+    img = cv2.imread(row['full_path'].replace("\\", '/'), 0)
     hash_val = 'no hash'
     if img is not None:
         hash_val = hashlib.md5(img).hexdigest()
@@ -42,7 +42,7 @@ def filter_metadata_df(source_df, accepted_views, label_array):
     return resulted_df
 
 
-def return_norm_covid_pneumonia_df_metadata(source_df, accepted_views, normal_labels, pneumonia_labels, covid_labels):
+def create_norm_covid_pneumonia_df_metadata(source_df, accepted_views, normal_labels, pneumonia_labels, covid_labels):
     normal_df = filter_metadata_df(source_df, accepted_views, normal_labels)
     normal_df['diagnosis'] = 'normal'
     normal_df['label'] = 0
@@ -82,6 +82,13 @@ def extract_covid_scores(json_file):
     return labeler_score
 
 
+def create_relative_path_extr_info(row, minus_string):
+    full_path = os.path.normpath(row['full_path'])
+    minus_string = os.path.normpath(minus_string)
+    row['rel_path'] = full_path.replace(minus_string + os.sep, '')
+    return row
+
+
 def map_img_cvd_score(full_ann_dir):
     img_cvd_score = {}
     for ann in os.listdir(full_ann_dir):
@@ -98,10 +105,22 @@ def read_csv(path):
     return df
 
 
-def clf_next_element(df, idx):
+def clf_next_element(df, idx, args_dict: dict):
+
+    dir_path = args_dict['dir_path']
+    path_version = args_dict['path_version']
+
+    df_path = df.iloc[[idx]][path_version].values[0]
+    img_full_path = os.path.join(dir_path, df_path)
+    label = int(df.iloc[[idx]]['score'].values[0])
+    img = cv2.imread(img_full_path.replace("\\", '/'))
+    return img, label
+
+
+def regr_next_element(df, idx):
     img_full_path = df.iloc[[idx]]['full_path'].values[0]
-    label = df.iloc[[idx]]['score'].values[0]
-    img = cv2.imread(img_full_path)
+    label = df.iloc[[idx]]['consensus_score'].values[0]
+    img = cv2.imread(img_full_path.replace("\\", '/'))
     return img, label
 
 
@@ -123,16 +142,17 @@ def split_dataset(dataset, data_dist_dict, random_seed=12):
         selected_ind = indices[split_start_ind:split_end_ind]
         data_dist_sampler = SubsetRandomSampler(selected_ind)
         data_dist_dict[data_dist]['dataset'] = torch.utils.data.DataLoader(dataset,
-                                                batch_size=data_dist_dict[data_dist]['batch_size'],
-                                                sampler=data_dist_sampler)
+                                                                           batch_size=data_dist_dict[data_dist][
+                                                                               'batch_size'],
+                                                                           sampler=data_dist_sampler)
     return data_dist_dict
 
 
 class ToTensor(object):
     def __call__(self, sample):
         img, label = sample
-        img = np.array(img / 255.0, dtype=np.float32)
-        img = img.transpose((2, 0, 1))
+        img = torch.tensor(img / 255.0, dtype=torch.float32)
+        img = img.permute((2, 0, 1))
         return img, label
 
 
@@ -153,4 +173,15 @@ class Rescale(object):
             new_h, new_w = self.output_size
         new_h, new_w = int(new_h), int(new_w)
         img = cv2.resize(img, (new_h, new_w))
+        return img, label
+
+
+class Normalize(object):
+    def __init__(self, mean: list, std: list):
+        self.mean = torch.tensor([mean]).view(-1, 1, 1)
+        self.std = torch.tensor([std]).view(-1, 1, 1)
+
+    def __call__(self, sample):
+        img, label = sample
+        img = (img - self.mean) / self.std
         return img, label

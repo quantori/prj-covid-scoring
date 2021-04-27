@@ -1,7 +1,9 @@
 import argparse
 import os
-from tools.CustomDataLoaders import generate_df
 import pandas as pd
+from tqdm import tqdm
+from tools.CustomDataLoaders import generate_df
+from tools.DataProcessingTools import create_relative_path_extr_info
 
 
 def init_requirements():
@@ -21,25 +23,27 @@ def init_requirements():
     return requirements
 
 
-def extract_datasets_info(original_datasets_folder, output_filename):
+def extract_datasets_info(source_ds_dir, output_filename):
     requirements = init_requirements()
 
-    datasets_full_path = [os.path.join(original_datasets_folder, path) for path in os.listdir(original_datasets_folder)
+    datasets_full_path = [os.path.join(source_ds_dir, path) for path in os.listdir(source_ds_dir)
                           if os.path.isdir(
-            os.path.join(original_datasets_folder, path)) and path != 'COVID-19-Radiography-Database']
+            os.path.join(source_ds_dir, path)) and path != 'COVID-19-Radiography-Database']
 
-    datasets_info = generate_df(os.path.join(original_datasets_folder, 'COVID-19-Radiography-Database'), requirements)
-    for dataset in datasets_full_path:
-        full_dataset_path = os.path.join(original_datasets_folder, dataset)
+    datasets_info = generate_df(os.path.join(source_ds_dir, 'COVID-19-Radiography-Database'), requirements)
+    datasets_info = datasets_info.apply(create_relative_path_extr_info, minus_string=source_ds_dir, axis=1)
+
+    for dataset in tqdm(datasets_full_path):
+        full_dataset_path = os.path.join(source_ds_dir, dataset)
         df = generate_df(full_dataset_path, requirements)
+        df = df.apply(create_relative_path_extr_info, minus_string=source_ds_dir, axis=1)
         datasets_info = pd.concat([df, datasets_info])
-
     datasets_info.to_csv(output_filename, encoding='utf-8', index=False)
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--original_datasets_folder', type=str)
+    parser.add_argument('--source_ds_dir', type=str)
     parser.add_argument('--output_filename', default='datasets_info.csv', type=str)
     args = parser.parse_args()
-    extract_datasets_info(args.original_datasets_folder, args.output_filename)
+    extract_datasets_info(args.source_ds_dir, args.output_filename)
