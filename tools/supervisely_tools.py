@@ -53,9 +53,9 @@ def convert_base64_to_image(s: str) -> np.ndarray:
 
     img_decoded = cv2.imdecode(n, cv2.IMREAD_UNCHANGED)
     if (len(img_decoded.shape) == 3) and (img_decoded.shape[2] >= 4):
-        mask = img_decoded[:, :, 3].astype(bool)                        # 4-channel images
+        mask = img_decoded[:, :, 3].astype(np.uint8)                        # 4-channel images
     elif len(img_decoded.shape) == 2:
-        mask = img_decoded.astype(bool)                                 # flat 2D mask
+        mask = img_decoded.astype(np.uint8)                                 # flat 2D mask
     else:
         raise RuntimeError('Wrong internal mask format.')
     return mask
@@ -70,7 +70,7 @@ def convert_ann_to_mask(ann_path: str,
     img_height = data['size']['height']
     img_width = data['size']['width']
 
-    mask = np.zeros((img_height, img_width), dtype=np.bool)
+    mask = np.zeros((img_height, img_width), dtype=np.uint8)
     for obj in data['objects']:
         if obj['classTitle'] == class_name:
             encoded_bitmap = obj['bitmap']['data']
@@ -80,13 +80,12 @@ def convert_ann_to_mask(ann_path: str,
             mask[y: y+_mask_height, x:x+_mask_width] = _mask
         else:
             continue
-    mask = mask.astype(np.float32)
+    mask = np.expand_dims(mask, axis=2)
     return mask
 
 
 # image_paths, ann_paths = read_supervisely_project(sly_project_dir='dataset', included_datasets=['Actualmed-COVID-chestxray-dataset'])
 # ann_path = ann_paths[10]
 # mask = convert_ann_to_mask(ann_path=ann_path, class_name='COVID-19')
-# mask = 255*mask.astype(np.uint8)
 # cv2.imwrite('abc.png', mask)
 # print('')
