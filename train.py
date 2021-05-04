@@ -1,5 +1,5 @@
 import cv2
-from typing import List, Optional, Callable, Tuple
+from typing import List, Optional, Tuple
 
 import torch
 import numpy as np
@@ -11,11 +11,12 @@ from torch.utils.data import Dataset as BaseDataset
 from tools.supervisely_tools import read_supervisely_project, convert_ann_to_mask
 
 
-# TODO: add more augmentation options
-def get_augmentation() -> A.Compose:
+# TODO: think of adding more augmentation transformations such as Cutout, Grid Mask, MixUp, CutMix, Cutout, Mosaic
+# TODO: https://towardsdatascience.com/data-augmentation-in-yolov4-c16bd22b2617
+def augmentation_params() -> A.Compose:
     aug_transforms = [
         A.HorizontalFlip(p=0.5),
-        A.RandomCrop(height=600, width=600, always_apply=True)
+        # A.RandomCrop(height=600, width=600, always_apply=True)
     ]
     return A.Compose(aug_transforms)
 
@@ -26,31 +27,27 @@ class Dataset(BaseDataset):
                  dataset_dir: str,
                  included_datasets: Optional[List[str]] = None,
                  excluded_datasets: Optional[List[str]] = None,
+                 input_size: List[int] = (224, 224),
                  class_name: str = 'COVID-19',
-                 augmentation=None,
-                 transform_params=None) -> None:                                       # TODO: update later
+                 augmentation_params=None,
+                 transform_params=None) -> None:
 
         self.image_paths, self.ann_paths = read_supervisely_project(dataset_dir, included_datasets, excluded_datasets)
+        self.input_size = input_size
         self.class_name = class_name
-        self.augmentation = augmentation
+        self.augmentation_params = augmentation_params
         self.transform_params = transform_params
 
     def __len__(self):
         return len(self.image_paths)
 
+    # TODO: think of normalize_image implementation to transformation in __getitem__
     @staticmethod
     def normalize_image(image, target_min=0.0, target_max=1.0, target_type=np.float32):
         a = (target_max - target_min) / (image.max() - image.min())
         b = target_max - a * image.max()
-        norm_img = (a * image + b).astype(target_type)
-        return norm_img
-
-    def get_transformation(self,
-                           image: np.ndarray,
-                           mask: np.ndarray,
-                           transform_params) -> Tuple[np.ndarray, np.ndarray]:
-
-        return image, mask
+        image_norm = (a * image + b).astype(target_type)
+        return image_norm
 
     def __getitem__(self,
                     idx: int) -> Tuple[np.ndarray, np.ndarray]:
@@ -60,47 +57,33 @@ class Dataset(BaseDataset):
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         mask = convert_ann_to_mask(ann_path=ann_path, class_name=self.class_name)
 
-        # Apply augmentations
-        if self.augmentation:
-            sample = self.augmentation(image=image, mask=mask)
+        # Apply augmentation
+        if self.augmentation_params:
+            sample = self.augmentation_params(image=image, mask=mask)
             image, mask = sample['image'], sample['mask']
 
+        # Apply transformation
         if self.transform_params:
-            # TODO: self.transform_params['input_range'] may vary in different ranges not only in [0; 1]
+            # TODO: input_range in self.transform_params['input_range'] may vary in different ranges not only in [0; 1]
+            # TODO: think of image normalization to a range of [a; b]
             preprocess_image = transforms.Compose([transforms.ToTensor(),
-                                                   transforms.Resize(size=512, interpolation=2),
-                                                   transforms.Normalize(mean=self.transform_params['mean'], std=self.transform_params['std'])])
+                                                   transforms.Resize(size=self.input_size,
+                                                                     interpolation=2),
+                                                   transforms.Normalize(mean=self.transform_params['mean'],
+                                                                        std=self.transform_params['std'])]
+                                                  )
             preprocess_mask = transforms.Compose([transforms.ToTensor(),
-                                                  transforms.Resize(size=512, interpolation=0)])
+                                                  transforms.Resize(size=self.input_size,
+                                                                    interpolation=0)])
             image = preprocess_image(image)
             mask = preprocess_mask(mask)
 
-            # TODO: think of padding and equal sizes
-
-            # results1 = transforms.ToPILImage(mode='RGB')(image)
-            # results2 = transforms.ToPILImage(mode='RGB')(mask)
-            # results1 = image.numpy()
-            # results2 = mask.numpy()
-            # results1.show()
-            # results2.show()
+            # Used for debug only
+            transformed_image = transforms.ToPILImage()(image)
+            transformed_mask = transforms.ToPILImage()(mask)
+            transformed_image.show()
+            transformed_mask.show()
         return image, mask
-
-
-
-def to_tensor(x, **kwargs):
-    return x.transpose(2, 0, 1).astype('float32')
-
-
-def get_preprocessing(preprocessing_fn: Callable) -> A.Compose:
-    """Construct preprocessing transform
-    :param
-        preprocessing_fn (callbale): data normalization function (can be specific for each pretrained neural network)
-    :return
-        transform: albumentations.Compose
-    """
-    _transform = [A.Lambda(image=preprocessing_fn),
-                  A.Lambda(image=to_tensor, mask=to_tensor)]
-    return A.Compose(_transform)
 
 
 if __name__ == '__main__':
@@ -119,17 +102,21 @@ if __name__ == '__main__':
     preprocessing_params = smp.encoders.get_preprocessing_params(encoder_name=ENCODER, pretrained=ENCODER_WEIGHTS)
 
     train_ds = Dataset(dataset_dir='dataset',
+                       input_size=[512, 512],
                        class_name='COVID-19',
                        included_datasets=['Actualmed-COVID-chestxray-dataset'],
-                       # augmentation=get_augmentation(),
-                       augmentation=None,
+                       augmentation_params=augmentation_params(),  # None
                        transform_params=preprocessing_params)
     val_ds = Dataset(dataset_dir='dataset',
+                     input_size=[512, 512],
                      class_name='COVID-19',
                      included_datasets=['Figure1-COVID-chestxray-dataset'],
-                     augmentation=None,
+                     augmentation_params=None,
                      transform_params=preprocessing_params)
+
+    # Used for debug only
     image, mask = train_ds[10]
+
     train_loader = DataLoader(train_ds, batch_size=4, shuffle=True, num_workers=4)
     val_loader = DataLoader(val_ds, batch_size=1, shuffle=False, num_workers=4)
 
@@ -149,8 +136,6 @@ if __name__ == '__main__':
                                              device=DEVICE,
                                              verbose=True)
 
-
-
     max_score = 0
 
     for i in range(0, 40):
@@ -159,7 +144,7 @@ if __name__ == '__main__':
         train_logs = train_epoch.run(train_loader)
         val_logs = valid_epoch.run(val_loader)
 
-        # do something (save model, change lr, etc.)
+        # TODO: add logging of metrics and images to WANDB
         if max_score < val_logs['iou_score']:
             max_score = val_logs['iou_score']
             torch.save(model, './best_model.pth')
