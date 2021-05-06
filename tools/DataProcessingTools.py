@@ -9,8 +9,8 @@ import hashlib
 import pandas as pd
 
 
-def path_without_extension(path):
-    extensions = ['.tif', '.jpg', '.jpeg', '.png', '.tiff', '.json', '.txt', '.csv', 'xlsx']
+def remove_extension(path):
+    extensions = ['.tif', '.jpg', '.jpeg', '.png', '.tiff', '.json', '.txt', '.csv', '.xlsx', '.bmp']
     while True:
         base, ext = os.path.splitext(path)
         if ext not in extensions:
@@ -74,22 +74,23 @@ def find_str_of_substr(search_array, substr):
 
 def extract_covid_scores(json_file):
     labeler_score = {'JohnDoe': None, 'RenataS': None}
-    for obj in json_file['objects']:
-        for tag in obj['tags']:
-            if tag['name'] != 'Score':
-                continue
-            labeler_score[tag['labelerLogin']] = int(tag['value'])
+    tag_2_labeler = {'Score R': 'RenataS', 'Score D': 'JohnDoe'}
+    for tag in json_file['tags']:
+        if 'Score' not in tag['name']:
+            continue
+        labeler = tag_2_labeler[tag['name']]
+        labeler_score[labeler] = int(tag['value'])
     return labeler_score
 
 
-def create_relative_path_extr_info(row, minus_string):
+def create_relative_path(row, minus_string):
     full_path = os.path.normpath(row['full_path'])
     minus_string = os.path.normpath(minus_string)
-    row['rel_path'] = full_path.replace(minus_string + os.sep, '')
+    row['rel_img_path'] = full_path.replace(minus_string + os.sep, '')
     return row
 
 
-def map_img_cvd_score(full_ann_dir):
+def create_img_score(full_ann_dir):
     img_cvd_score = {}
     for ann in os.listdir(full_ann_dir):
         full_ann_path = os.path.join(full_ann_dir, ann)
@@ -106,7 +107,6 @@ def read_csv(path):
 
 
 def clf_next_element(df, idx, args_dict: dict):
-
     dir_path = args_dict['dir_path']
     path_version = args_dict['path_version']
 

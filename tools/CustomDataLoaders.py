@@ -14,8 +14,6 @@ class LoadImgAnn(Dataset):
         self.args = next_element_args
         self.data_processing_function = data_processing_function
         self.next_element = next_element
-        print(self.args)
-        print(self.next_element)
         self.loaded_data = data_processing_function(data)
 
     def __len__(self):
@@ -162,8 +160,6 @@ def load_split_clf_data(covid_scoring_data_path, batch_size, data_processing_fun
                         tr_spl_end=0.8, val_spl_end=0.9):
     assert os.path.splitext(covid_scoring_data_path)[-1] in ['.pt', '.csv', '.pth'],\
         'wrong covid_scoring_data_path format'
-    print("data_processing_function:", data_processing_function)
-    print("next_element:", next_element)
 
     if os.path.splitext(covid_scoring_data_path)[-1] in ['.pt', '.pth']:
         dataset = torch.load(covid_scoring_data_path)

@@ -32,7 +32,6 @@ if __name__ == "__main__":
                                 role=args.role,
                                 framework_version='1.8',
                                 py_version='py36',
-                                #output_path="file:///mnt/d/quantori_projects/prj-covid-scoring/",
                                 hyperparameters=hyperparameters)
 
     pytorch_estimator.fit(inputs)

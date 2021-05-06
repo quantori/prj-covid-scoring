@@ -3,7 +3,7 @@ import os
 import pandas as pd
 from tqdm import tqdm
 from tools.CustomDataLoaders import generate_df
-from tools.DataProcessingTools import create_relative_path_extr_info
+from tools.DataProcessingTools import create_relative_path
 
 
 def init_requirements():
@@ -31,12 +31,12 @@ def extract_datasets_info(source_ds_dir, output_filename):
             os.path.join(source_ds_dir, path)) and path != 'COVID-19-Radiography-Database']
 
     datasets_info = generate_df(os.path.join(source_ds_dir, 'COVID-19-Radiography-Database'), requirements)
-    datasets_info = datasets_info.apply(create_relative_path_extr_info, minus_string=source_ds_dir, axis=1)
+    datasets_info = datasets_info.apply(create_relative_path, minus_string=source_ds_dir, axis=1)
 
     for dataset in tqdm(datasets_full_path):
         full_dataset_path = os.path.join(source_ds_dir, dataset)
         df = generate_df(full_dataset_path, requirements)
-        df = df.apply(create_relative_path_extr_info, minus_string=source_ds_dir, axis=1)
+        df = df.apply(create_relative_path, minus_string=source_ds_dir, axis=1)
         datasets_info = pd.concat([df, datasets_info])
     datasets_info.to_csv(output_filename, encoding='utf-8', index=False)
 
