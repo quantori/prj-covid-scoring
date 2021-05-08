@@ -1,5 +1,4 @@
 .idea
-dataset/Actualmed-COVID-chestxray-dataset
-dataset/Figure1-COVID-chestxray-dataset
-dataset/covid-chestxray-dataset
-dataset/COVID-19-Radiography-Database
+.dvc
+/dataset/
+/models/
