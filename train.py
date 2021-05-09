@@ -1,11 +1,12 @@
+import os
 import cv2
 import argparse
 import multiprocessing
+from datetime import datetime
 from typing import List, Optional, Tuple, Any
 
 import torch
 import numpy as np
-from tqdm import tqdm
 import albumentations as A
 from torch.utils.data import DataLoader
 import segmentation_models_pytorch as smp
@@ -15,7 +16,7 @@ from tools.supervisely_tools import read_supervisely_project, convert_ann_to_mas
 
 
 # TODO: think of adding more augmentation transformations such as Cutout, Grid Mask, MixUp, CutMix, Cutout, Mosaic
-# TODO: https://towardsdatascience.com/data-augmentation-in-yolov4-c16bd22b2617
+#       https://towardsdatascience.com/data-augmentation-in-yolov4-c16bd22b2617
 def augmentation_params() -> A.Compose:
     aug_transforms = [
         A.HorizontalFlip(p=0.5),
@@ -28,7 +29,6 @@ class Dataset(BaseDataset):
     """Dataset class used for reading images/masks, applying augmentation and preprocessing."""
     def __init__(self,
                  dataset_dir: str,
-                 use_cached_data: bool = False,
                  included_datasets: Optional[List[str]] = None,
                  excluded_datasets: Optional[List[str]] = None,
                  input_size: List[int] = (512, 512),
@@ -36,17 +36,8 @@ class Dataset(BaseDataset):
                  augmentation_params=None,
                  transform_params=None) -> None:
 
-        # TODO: add option --cache where the dataset is placed to RAM
-        # TODO: these links might help
-        # TODO: https://github.com/ultralytics/yolov5/blob/d2a17289c99ad45cb901ea81db5932fa0ca9b711/utils/datasets.py#L381
-        # TODO: https://discuss.pytorch.org/t/best-practice-to-cache-the-entire-dataset-during-first-epoch/19608
         self.image_paths, self.ann_paths = read_supervisely_project(dataset_dir, included_datasets, excluded_datasets)
         self.class_name = class_name
-        if use_cached_data:
-            self.images = []
-            self.masks = []
-            self.cache_data()
-        self.use_cached_data = use_cached_data
         self.input_size = input_size
         self.augmentation_params = augmentation_params
         self.transform_params = transform_params
@@ -54,7 +45,7 @@ class Dataset(BaseDataset):
     def __len__(self):
         return len(self.image_paths)
 
-    # TODO (Slava): think of normalize_image implementation to transformation in __getitem__
+    # TODO: think of normalize_image implementation to transformation in __getitem__
     @staticmethod
     def normalize_image(image, target_min=0.0, target_max=1.0, target_type=np.float32):
         a = (target_max - target_min) / (image.max() - image.min())
@@ -62,26 +53,13 @@ class Dataset(BaseDataset):
         image_norm = (a * image + b).astype(target_type)
         return image_norm
 
-    def cache_data(self):
-        for image_path in tqdm(self.image_paths, unit=' images'):
-            image = cv2.imread(image_path)
-            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-            self.images.append(image)
-        for ann_path in tqdm(self.ann_paths, unit=' masks'):
-            mask = convert_ann_to_mask(ann_path=ann_path, class_name=self.class_name)
-            self.masks.append(mask)
-
     def __getitem__(self,
                     idx: int) -> Tuple[np.ndarray, np.ndarray]:
-        if self.use_cached_data:
-            image = self.images[idx]
-            mask = self.masks[idx]
-        else:
-            image_path = self.image_paths[idx]
-            ann_path = self.ann_paths[idx]
-            image = cv2.imread(image_path)
-            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-            mask = convert_ann_to_mask(ann_path=ann_path, class_name=self.class_name)
+        image_path = self.image_paths[idx]
+        ann_path = self.ann_paths[idx]
+        image = cv2.imread(image_path)
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        mask = convert_ann_to_mask(ann_path=ann_path, class_name=self.class_name)
 
         # Apply augmentation
         if self.augmentation_params:
@@ -90,8 +68,8 @@ class Dataset(BaseDataset):
 
         # Apply transformation
         if self.transform_params:
-            # TODO: input_range in self.transform_params['input_range'] may vary in different ranges not only in [0; 1]
-            # TODO: think of image normalization to a range of [a; b]
+            # TODO: input_range in self.transform_params['input_range'] may vary in different ranges not only in [0; 1],
+            #       think of image normalization to a range of [a; b]
             preprocess_image = transforms.Compose([transforms.ToTensor(),
                                                    transforms.Resize(size=self.input_size,
                                                                      interpolation=2),
@@ -122,12 +100,12 @@ class Model:
                  encoder_name: str = 'resnet18',
                  encoder_weights: str = 'imagenet',
                  batch_size: int = 4,
-                 device: Optional[str] = 'cuda',         # TODO (Slava): add automatic device selection and test it
                  input_size: List[int] = (512, 512),
                  in_channels: int = 3,
                  classes: int = 1,
                  activation: str = 'sigmoid',
-                 class_name: str = 'COVID-19') -> None:
+                 class_name: str = 'COVID-19',
+                 save_dir: str = 'models') -> None:
 
         # Dataset settings
         self.dataset_dir = dataset_dir
@@ -135,7 +113,6 @@ class Model:
         self.excluded_datasets = excluded_datasets
         self.augmentation_params = augmentation_params
         self.input_size = input_size
-        self.device = device
 
         # Model settings
         self.model_name = model_name
@@ -146,8 +123,54 @@ class Model:
         self.classes = classes
         self.activation = activation
         self.class_name = class_name
+        self.device = self.device_selection()
+        run_time = datetime.now().strftime("%d%m_%H%M")
+        _model_dir = '{:s}_{:s}_{:s}_{:s}'.format(self.model_name, self.encoder_name, self.encoder_weights, run_time)
+        self.model_dir = os.path.join(save_dir, _model_dir)
+        os.makedirs(self.model_dir) if not os.path.exists(self.model_dir) else False
         # self.model = self._get_model()        # Think of the best place for calling _get_model(): __init__ or train()
-        # TODO: print model options
+        self.print_model_settings()
+
+    def print_model_settings(self) -> None:
+        print('\033[1m\033[4m\033[93m' + '\nDataset settings:' + '\033[0m')
+        print('\033[92m' + 'Class name: \t\t{:s}'.format(self.class_name) + '\033[0m')
+        print('\033[92m' + 'Dataset dir: \t\t{:s}'.format(self.dataset_dir) + '\033[0m')
+        print('\033[92m' + 'Included datasets: \t{}'.format(self.included_datasets) + '\033[0m')
+        print('\033[92m' + 'Excluded datasets: \t{}'.format(self.excluded_datasets) + '\033[0m')
+
+        print('\033[1m\033[4m\033[93m' + '\nModel settings:' + '\033[0m')
+        print('\033[92m' + 'Model name: \t\t{:s}'.format(self.model_name) + '\033[0m')
+        print('\033[92m' + 'Encoder: \t\t{:s}/{:s}'.format(self.encoder_name, self.encoder_weights) + '\033[0m')
+        print('\033[92m' + 'Input size: \t\t{:d}x{:d}x{:d}'.format(self.input_size[0], self.input_size[1], self.in_channels) + '\033[0m')
+        print('\033[92m' + 'Class count: \t\t{:d}'.format(self.classes) + '\033[0m')
+        print('\033[92m' + 'Activation: \t\t{:s}'.format(self.activation) + '\033[0m\n')
+
+    def device_selection(self) -> str:
+        device = 'cuda' if torch.cuda.is_available() else 'cpu'
+
+        # GPU
+        n = torch.cuda.device_count()
+        if n > 1 and self.batch_size:
+            assert self.batch_size % n == 0, 'batch size {:d} does not multiple of GPU count {:d}'.format(
+                self.batch_size, n)
+        gpu_s = ''
+        for idx in range(n):
+            p = torch.cuda.get_device_properties(idx)
+            gpu_s += "{:s}, {:.0f} MB".format(p.name, p.total_memory / 1024 ** 2)
+
+        # CPU
+        from cpuinfo import get_cpu_info
+        cpu_info = get_cpu_info()
+        cpu_s = "{:s}, {:d} cores".format(cpu_info['brand_raw'], cpu_info["count"])
+
+        print('\033[1m\033[4m\033[93m' + '\nDevice settings:' + '\033[0m')
+        if device == 'cuda':
+            print('\033[92m' + '✅ GPU: {:s}'.format(gpu_s) + '\033[0m')
+            print('\033[91m' + '❌ CPU: {:s}'.format(cpu_s) + '\033[0m')
+        else:
+            print('\033[92m' + '✅ CPU: {:s}'.format(cpu_s) + '\033[0m')
+            print('\033[91m' + '❌ GPU: ({:s})'.format(gpu_s) + '\033[0m')
+        return device
 
     def _get_model(self) -> Any:
         if self.model_name == 'Unet':
@@ -204,26 +227,25 @@ class Model:
 
         preprocessing_params = smp.encoders.get_preprocessing_params(encoder_name=self.encoder_name,
                                                                      pretrained=self.encoder_weights)
+        # TODO: Move datasets out of the class method
         train_ds = Dataset(dataset_dir=self.dataset_dir,
-                           use_cached_data=False,               # Temporal check
                            input_size=self.input_size,
                            class_name=self.class_name,
-                           included_datasets=self.included_datasets,                    # TODO: covid: ['Actualmed-COVID-chestxray-dataset'], lungs: ['Shenzhen']
+                           included_datasets=self.included_datasets,                    # Debug: covid: ['Actualmed-COVID-chestxray-dataset'], lungs: ['Shenzhen']
                            excluded_datasets=self.excluded_datasets,
                            augmentation_params=self.augmentation_params,
                            transform_params=preprocessing_params)
         val_ds = Dataset(dataset_dir=self.dataset_dir,
-                         use_cached_data=True,                 # Temporal check
                          input_size=self.input_size,
                          class_name=self.class_name,
-                         included_datasets=['Figure1-COVID-chestxray-dataset'],         # TODO: covid: ['Figure1-COVID-chestxray-dataset'], lungs: ['Montgomery']
+                         included_datasets=['Figure1-COVID-chestxray-dataset'],         # Debug: covid: ['Figure1-COVID-chestxray-dataset'], lungs: ['Montgomery']
                          excluded_datasets=self.excluded_datasets,
                          augmentation_params=None,
                          transform_params=preprocessing_params)
 
         # Used only for debug
-        image_train, mask_train = train_ds[10]
-        image_val, mask_val = val_ds[5]
+        # image_train, mask_train = train_ds[10]
+        # image_val, mask_val = val_ds[5]
 
         num_cores = multiprocessing.cpu_count()
         train_loader = DataLoader(dataset=train_ds, batch_size=self.batch_size, shuffle=True, num_workers=num_cores)
@@ -266,8 +288,9 @@ class Model:
             # TODO: add logging of metrics and images to WANDB
             if max_score < val_logs['iou_score']:
                 max_score = val_logs['iou_score']
-                # torch.save(model, './best_model.pth')
-                # print('Model saved!')
+                best_weights_path = os.path.join(self.model_dir, 'best_weights.pth')
+                torch.save(model, best_weights_path)
+                print('Best weights are saved to {:s}'.format(best_weights_path))
 
             if i == 25:
                 optimizer.param_groups[0]['lr'] = 1e-5
@@ -281,18 +304,19 @@ if __name__ == '__main__':
     parser.add_argument('--dataset_dir', default='dataset/covid_segmentation', type=str, help='covid_segmentation or lungs_segmentation')
     parser.add_argument('--class_name', default='COVID-19', type=str, help='COVID-19 or Lungs')
     parser.add_argument('--input_size', nargs='+', default=(512, 512), type=int)
+    parser.add_argument('--device', default='cpu', type=str, help='cuda or cpu')
     parser.add_argument('--model_name', default='Unet', type=str)
     parser.add_argument('--encoder_name', default='resnet18', type=str)
     parser.add_argument('--encoder_weights', default='imagenet', type=str, help='imagenet, ssl or swsl')
     parser.add_argument('--batch_size', default=4, type=int)
-    parser.add_argument('--save_dir', default='', type=str)     # TODO: add save_dir for the model
+    parser.add_argument('--save_dir', default='models', type=str)
     args = parser.parse_args()
 
     model = Model(dataset_dir=args.dataset_dir,
                   class_name=args.class_name,
                   input_size=args.input_size,
-                  # included_datasets=['Actualmed-COVID-chestxray-dataset'],      # Temporal ds for train debugging
-                  included_datasets=None,
+                  included_datasets=['Actualmed-COVID-chestxray-dataset'],      # Temporal ds for train debugging
+                  # included_datasets=None,
                   excluded_datasets=None,
                   model_name=args.model_name,
                   encoder_name=args.encoder_name,
