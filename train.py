@@ -5,6 +5,7 @@ from typing import List, Optional, Tuple, Any
 
 import torch
 import numpy as np
+from tqdm import tqdm
 import albumentations as A
 from torch.utils.data import DataLoader
 import segmentation_models_pytorch as smp
@@ -27,6 +28,7 @@ class Dataset(BaseDataset):
     """Dataset class used for reading images/masks, applying augmentation and preprocessing."""
     def __init__(self,
                  dataset_dir: str,
+                 use_cached_data: bool = False,
                  included_datasets: Optional[List[str]] = None,
                  excluded_datasets: Optional[List[str]] = None,
                  input_size: List[int] = (512, 512),
@@ -39,8 +41,13 @@ class Dataset(BaseDataset):
         # TODO: https://github.com/ultralytics/yolov5/blob/d2a17289c99ad45cb901ea81db5932fa0ca9b711/utils/datasets.py#L381
         # TODO: https://discuss.pytorch.org/t/best-practice-to-cache-the-entire-dataset-during-first-epoch/19608
         self.image_paths, self.ann_paths = read_supervisely_project(dataset_dir, included_datasets, excluded_datasets)
-        self.input_size = input_size
         self.class_name = class_name
+        if use_cached_data:
+            self.images = []
+            self.masks = []
+            self.cache_data()
+        self.use_cached_data = use_cached_data
+        self.input_size = input_size
         self.augmentation_params = augmentation_params
         self.transform_params = transform_params
 
@@ -55,13 +62,26 @@ class Dataset(BaseDataset):
         image_norm = (a * image + b).astype(target_type)
         return image_norm
 
+    def cache_data(self):
+        for image_path in tqdm(self.image_paths, unit=' images'):
+            image = cv2.imread(image_path)
+            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            self.images.append(image)
+        for ann_path in tqdm(self.ann_paths, unit=' masks'):
+            mask = convert_ann_to_mask(ann_path=ann_path, class_name=self.class_name)
+            self.masks.append(mask)
+
     def __getitem__(self,
                     idx: int) -> Tuple[np.ndarray, np.ndarray]:
-        image_path = self.image_paths[idx]
-        ann_path = self.ann_paths[idx]
-        image = cv2.imread(image_path)
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        mask = convert_ann_to_mask(ann_path=ann_path, class_name=self.class_name)
+        if self.use_cached_data:
+            image = self.images[idx]
+            mask = self.masks[idx]
+        else:
+            image_path = self.image_paths[idx]
+            ann_path = self.ann_paths[idx]
+            image = cv2.imread(image_path)
+            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            mask = convert_ann_to_mask(ann_path=ann_path, class_name=self.class_name)
 
         # Apply augmentation
         if self.augmentation_params:
@@ -185,6 +205,7 @@ class Model:
         preprocessing_params = smp.encoders.get_preprocessing_params(encoder_name=self.encoder_name,
                                                                      pretrained=self.encoder_weights)
         train_ds = Dataset(dataset_dir=self.dataset_dir,
+                           use_cached_data=False,               # Temporal check
                            input_size=self.input_size,
                            class_name=self.class_name,
                            included_datasets=self.included_datasets,                    # TODO: covid: ['Actualmed-COVID-chestxray-dataset'], lungs: ['Shenzhen']
@@ -192,6 +213,7 @@ class Model:
                            augmentation_params=self.augmentation_params,
                            transform_params=preprocessing_params)
         val_ds = Dataset(dataset_dir=self.dataset_dir,
+                         use_cached_data=True,                 # Temporal check
                          input_size=self.input_size,
                          class_name=self.class_name,
                          included_datasets=['Figure1-COVID-chestxray-dataset'],         # TODO: covid: ['Figure1-COVID-chestxray-dataset'], lungs: ['Montgomery']
@@ -200,8 +222,8 @@ class Model:
                          transform_params=preprocessing_params)
 
         # Used only for debug
-        # image, mask = train_ds[10]
-        # image, mask = val_ds[5]
+        image_train, mask_train = train_ds[10]
+        image_val, mask_val = val_ds[5]
 
         num_cores = multiprocessing.cpu_count()
         train_loader = DataLoader(dataset=train_ds, batch_size=self.batch_size, shuffle=True, num_workers=num_cores)
@@ -220,7 +242,6 @@ class Model:
                                                  optimizer=optimizer,
                                                  device=self.device,
                                                  verbose=True)
-
         valid_epoch = smp.utils.train.ValidEpoch(model,
                                                  loss=loss,
                                                  metrics=metrics,
@@ -270,7 +291,9 @@ if __name__ == '__main__':
     model = Model(dataset_dir=args.dataset_dir,
                   class_name=args.class_name,
                   input_size=args.input_size,
-                  included_datasets=['Actualmed-COVID-chestxray-dataset'],      # Temporal ds for train debugging
+                  # included_datasets=['Actualmed-COVID-chestxray-dataset'],      # Temporal ds for train debugging
+                  included_datasets=None,
+                  excluded_datasets=None,
                   model_name=args.model_name,
                   encoder_name=args.encoder_name,
                   encoder_weights=args.encoder_weights,
