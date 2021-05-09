@@ -9,7 +9,7 @@ import cv2
 import numpy as np
 import supervisely_lib as sly
 
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 
 
 def read_supervisely_project(sly_project_dir: str,
