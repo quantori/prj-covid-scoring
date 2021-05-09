@@ -100,6 +100,7 @@ class Model:
                  encoder_name: str = 'resnet18',
                  encoder_weights: str = 'imagenet',
                  batch_size: int = 4,
+                 epochs: int = 30,
                  input_size: List[int] = (512, 512),
                  in_channels: int = 3,
                  classes: int = 1,
@@ -119,6 +120,7 @@ class Model:
         self.encoder_name = encoder_name
         self.encoder_weights = encoder_weights
         self.batch_size = batch_size
+        self.epochs = epochs
         self.in_channels = in_channels
         self.classes = classes
         self.activation = activation
@@ -227,7 +229,7 @@ class Model:
 
         preprocessing_params = smp.encoders.get_preprocessing_params(encoder_name=self.encoder_name,
                                                                      pretrained=self.encoder_weights)
-        # TODO: Move datasets out of the class method
+        # TODO: Move datasets out of the class method and rewrite the dataset according to train/val/test split
         train_ds = Dataset(dataset_dir=self.dataset_dir,
                            input_size=self.input_size,
                            class_name=self.class_name,
@@ -242,6 +244,13 @@ class Model:
                          excluded_datasets=self.excluded_datasets,
                          augmentation_params=None,
                          transform_params=preprocessing_params)
+        test_ds = Dataset(dataset_dir=self.dataset_dir,
+                          input_size=self.input_size,
+                          class_name=self.class_name,
+                          included_datasets=['COVID-19-Radiography-Database'],         # Debug: covid: ['Figure1-COVID-chestxray-dataset'], lungs: ['Montgomery']
+                          excluded_datasets=self.excluded_datasets,
+                          augmentation_params=None,
+                          transform_params=preprocessing_params)
 
         # Used only for debug
         # image_train, mask_train = train_ds[10]
@@ -250,11 +259,12 @@ class Model:
         num_cores = multiprocessing.cpu_count()
         train_loader = DataLoader(dataset=train_ds, batch_size=self.batch_size, shuffle=True, num_workers=num_cores)
         val_loader = DataLoader(dataset=val_ds, batch_size=self.batch_size, shuffle=False, num_workers=num_cores)
+        test_loader = DataLoader(dataset=test_ds, batch_size=self.batch_size, shuffle=False, num_workers=num_cores)
 
-        loss = smp.utils.losses.DiceLoss()
-        metrics = [smp.utils.metrics.IoU(threshold=0.5),
+        loss = smp.utils.losses.BCEWithLogitsLoss() + smp.utils.losses.DiceLoss()   # DiceLoss, JaccardLoss, BCEWithLogitsLoss, BCELoss
+        metrics = [smp.utils.metrics.Fscore(threshold=0.5),
+                   smp.utils.metrics.IoU(threshold=0.5),
                    smp.utils.metrics.Accuracy(threshold=0.5),
-                   smp.utils.metrics.Fscore(threshold=0.5),
                    smp.utils.metrics.Precision(threshold=0.5),
                    smp.utils.metrics.Recall(threshold=0.5)]
         optimizer = torch.optim.Adam([dict(params=model.parameters(), lr=0.0001)])
@@ -267,15 +277,23 @@ class Model:
         valid_epoch = smp.utils.train.ValidEpoch(model,
                                                  loss=loss,
                                                  metrics=metrics,
+                                                 stage_name='valid',        # add stage_name arg to ValidEpoch __init__
                                                  device=self.device,
                                                  verbose=True)
+        test_epoch = smp.utils.train.ValidEpoch(model,
+                                                loss=loss,
+                                                stage_name='test',          # add stage_name arg to ValidEpoch __init__
+                                                metrics=metrics,
+                                                device=self.device,
+                                                verbose=True)
 
         max_score = 0
-        for i in range(0, 40):
+        for i in range(0, self.epochs):
 
             print('\nEpoch: {:d}'.format(i))
             train_logs = train_epoch.run(train_loader)
             val_logs = valid_epoch.run(val_loader)
+            test_logs = test_epoch.run(test_loader)
 
             # For debugging only (not finished)
             # img_path = 'dataset/covid_segmentation/Actualmed-COVID-chestxray-dataset/img/CR.1.2.840.113564.1722810170.20200405065153640420.1003000225002.png'
@@ -305,12 +323,16 @@ if __name__ == '__main__':
     parser.add_argument('--class_name', default='COVID-19', type=str, help='COVID-19 or Lungs')
     parser.add_argument('--input_size', nargs='+', default=(512, 512), type=int)
     parser.add_argument('--device', default='cpu', type=str, help='cuda or cpu')
-    parser.add_argument('--model_name', default='Unet', type=str)
+    parser.add_argument('--model_name', default='Unet', type=str, help='Unet, Unet++, DeepLabV3, DeepLabV3+, FPN, Linknet, or PSPNet')
     parser.add_argument('--encoder_name', default='resnet18', type=str)
     parser.add_argument('--encoder_weights', default='imagenet', type=str, help='imagenet, ssl or swsl')
     parser.add_argument('--batch_size', default=4, type=int)
+    parser.add_argument('--epochs', default=30, type=int)
     parser.add_argument('--save_dir', default='models', type=str)
     args = parser.parse_args()
+
+
+    # TODO: add train/val/test dataset here + split images/masks
 
     model = Model(dataset_dir=args.dataset_dir,
                   class_name=args.class_name,
@@ -321,5 +343,6 @@ if __name__ == '__main__':
                   model_name=args.model_name,
                   encoder_name=args.encoder_name,
                   encoder_weights=args.encoder_weights,
-                  batch_size=args.batch_size)
+                  batch_size=args.batch_size,
+                  epochs=args.epochs)
     model.train()
