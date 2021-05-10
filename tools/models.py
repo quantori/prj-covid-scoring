@@ -1,181 +1,149 @@
+import datetime
+import copy
+import os
+
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
+from tqdm import tqdm
+import wandb
+import torch.optim as optim
 from torchvision import models
-from tools.models_utils import set_parameter_requires_grad
+from torchmetrics import MetricCollection, Accuracy, Precision, Recall
+
+from tools.utils import set_parameter_requires_grad, Flatten, mse_sigmoid_loss
+from tools.utils import compute_clf_scoring_metrics, compute_regr_scoring_metrics, CrossEntropyMetric, CrossMSEMetric
 
 
-class Flatten(nn.Module):
-    def forward(self, input):
-        return input.view(input.size(0), -1)
+class ScoringModel:
+    def __init__(self,
+                 pretrained_name: str = 'densenet121',
+                 model_type: str = 'classification',
+                 num_classes: int = 7,
+                 lr: float = 0.001,
+                 dropout: float = 0.4,
+                 wandb_api_key: str = 'cb108eee503905d043b3d160df1498a5ac4f8f77',
+                 device_name: str = 'cpu'):
 
+        assert model_type in ['classification', 'regression'], 'incorrect model type {}'.format(model_type)
 
-class PEXP(nn.Module):
-    def __init__(self, n_input, n_out):
-        super(PEXP, self).__init__()
-        self.network = nn.Sequential(nn.Conv2d(in_channels=n_input, out_channels=n_input // 2, kernel_size=1),
-                                     nn.Conv2d(in_channels=n_input // 2, out_channels=int(3 * n_input / 4),
-                                               kernel_size=1),
-                                     nn.Conv2d(in_channels=int(3 * n_input / 4), out_channels=int(3 * n_input / 4),
-                                               kernel_size=3, groups=int(3 * n_input / 4), padding=1),
-                                     nn.Conv2d(in_channels=int(3 * n_input / 4), out_channels=n_input // 2,
-                                               kernel_size=1),
-                                     nn.Conv2d(in_channels=n_input // 2, out_channels=n_out, kernel_size=1))
+        #model settings
+        self.pretrained_name = pretrained_name
+        self.model_type = model_type
+        self.num_classes = num_classes
+        self.lr = lr
+        self.dropout = dropout
 
-    def forward(self, x):
-        return self.network(x)
+        self.device = torch.device(device_name)
+        self.run_name = model_type + '_' + str(datetime.datetime.now()).replace(':', '.')
+        self.wandb_api_key = wandb_api_key
 
+    def get_pretrained_base(self, pretrained_name, requires_grad=False):
+        available_models = ['densenet121']
+        assert pretrained_name in available_models, 'desired model isn\'t implemented'.format(pretrained_name)
+        if pretrained_name == 'densenet121':
+            model = models.densenet121(pretrained=True)
+            set_parameter_requires_grad(model, requires_grad)
+            base_model = nn.Sequential(*list(model.children())[:-1], nn.AdaptiveAvgPool2d((1, 1)), nn.Flatten())
+            return base_model
 
-class CovidNet(nn.Module):
-    def __init__(self, model='small', n_classes=3):
-        super(CovidNet, self).__init__()
-        filters = {
-            'pexp1_1': [64, 256],
-            'pexp1_2': [256, 256],
-            'pexp1_3': [256, 256],
-            'pexp2_1': [256, 512],
-            'pexp2_2': [512, 512],
-            'pexp2_3': [512, 512],
-            'pexp2_4': [512, 512],
-            'pexp3_1': [512, 1024],
-            'pexp3_2': [1024, 1024],
-            'pexp3_3': [1024, 1024],
-            'pexp3_4': [1024, 1024],
-            'pexp3_5': [1024, 1024],
-            'pexp3_6': [1024, 1024],
-            'pexp4_1': [1024, 2048],
-            'pexp4_2': [2048, 2048],
-            'pexp4_3': [2048, 2048],
-        }
+    def get_model_attributes(self):
+        #TODO:implement regression
+        pretrained_base = self.get_pretrained_base(self.pretrained_name)
+        if self.model_type == 'classification':
+            model = nn.Sequential(pretrained_base, nn.Dropout(p=self.dropout), nn.Linear(1024, self.num_classes))
+            criterion = nn.CrossEntropyLoss()
+            metrics_collection = MetricCollection([
+                CrossEntropyMetric(),
+                Accuracy(),
+                Precision(num_classes=self.num_classes, average='micro'),
+                Recall(num_classes=self.num_classes, average='micro')
+            ])
+            metrics_fun = compute_clf_scoring_metrics
 
-        self.add_module('conv1', nn.Conv2d(in_channels=3, out_channels=64, kernel_size=7, stride=2, padding=3))
-        for key in filters:
+        if self.model_type == 'regression':
+            model = nn.Sequential(pretrained_base, nn.Dropout(p=self.dropout), nn.Linear(1024, 1), Flatten())
+            criterion = mse_sigmoid_loss(self.num_classes)
+            metrics_collection = MetricCollection([
+                CrossMSEMetric(self.num_classes),
+                Accuracy(),
+                Precision(num_classes=self.num_classes, average='micro'),
+                Recall(num_classes=self.num_classes, average='micro')
+            ])
+            metrics_fun = compute_regr_scoring_metrics(num_classes=self.num_classes)
 
-            if ('pool' in key):
-                self.add_module(key, nn.MaxPool2d(filters[key][0], filters[key][1]))
-            else:
-                self.add_module(key, PEXP(filters[key][0], filters[key][1]))
+        optimizer = optim.SGD(model.parameters(), lr=self.lr, momentum=0.9)
+        return model, criterion, metrics_collection, metrics_fun, optimizer
 
-        if (model == 'large'):
+    @staticmethod
+    def train_epoch(model, train_data, criterion, optimizer, device, metrics_collection=None, metrics_fun=None):
+        model.train()
+        model.to(device)
+        if metrics_collection is not None:
+            metrics_collection.to(device)
 
-            self.add_module('conv1_1x1', nn.Conv2d(in_channels=64, out_channels=256, kernel_size=1))
-            self.add_module('conv2_1x1', nn.Conv2d(in_channels=256, out_channels=512, kernel_size=1))
-            self.add_module('conv3_1x1', nn.Conv2d(in_channels=512, out_channels=1024, kernel_size=1))
-            self.add_module('conv4_1x1', nn.Conv2d(in_channels=1024, out_channels=2048, kernel_size=1))
+        for index, data in enumerate(train_data):
+            inputs, labels = data
+            inputs, labels = inputs.to(device), labels.to(device)
+            optimizer.zero_grad()
+            outputs = model(inputs)
+            metrics_collection = metrics_fun(outputs, labels, metrics_collection)
 
-            self.__forward__ = self.forward_large_net
-        else:
-            self.__forward__ = self.forward_small_net
-        self.add_module('flatten', Flatten())
-        self.add_module('fc1', nn.Linear(7 * 7 * 2048, 1024))
+            loss = criterion(outputs, labels)
+            loss.backward()
+            optimizer.step()
+        return metrics_collection
 
-        self.add_module('fc2', nn.Linear(1024, 256))
-        self.add_module('classifier', nn.Linear(256, n_classes))
+    @staticmethod
+    @torch.no_grad()
+    def test_epoch(model, test_data, device, metrics_collection=None, metrics_fun=None):
+        model.eval()
+        model.to(device)
+        if metrics_collection is not None:
+            metrics_collection.to(device)
 
-    def forward(self, x):
-        return self.__forward__(x)
+        with torch.no_grad():
+            for data in test_data:
+                inputs, labels = data
+                inputs, labels = inputs.to(device), labels.to(device)
+                outputs = model(inputs)
+                metrics_collection = metrics_fun(outputs, labels, metrics_collection)
+        return metrics_collection
 
-    def forward_large_net(self, x):
-        x = F.max_pool2d(F.relu(self.conv1(x)), 2)
-        out_conv1_1x1 = self.conv1_1x1(x)
+    def train_scoring_model(self, train_data, validation_data, epochs, output_model_path):
 
-        pepx11 = self.pexp1_1(x)
-        pepx12 = self.pexp1_2(pepx11 + out_conv1_1x1)
-        pepx13 = self.pexp1_3(pepx12 + pepx11 + out_conv1_1x1)
+        #TODO:save dataset and also models to wandb
+        model, criterion, metrics_collection, metrics_fun, optimizer = self.get_model_attributes()
+        train_metrics = []
+        validation_metrics = []
+        best_model_wts = copy.deepcopy(model.state_dict())
+        best_val_accuracy = 0
 
-        out_conv2_1x1 = F.max_pool2d(self.conv2_1x1(pepx12 + pepx11 + pepx13 + out_conv1_1x1), 2)
+        if not (self.wandb_api_key is None):
+            os.environ['WANDB_API_KEY'] = self.wandb_api_key
+            wandb_run = wandb.init(project=self.model_type, entity='big_data_lab', name=self.run_name)
 
-        pepx21 = self.pexp2_1(
-            F.max_pool2d(pepx13, 2) + F.max_pool2d(pepx11, 2) + F.max_pool2d(pepx12, 2) + F.max_pool2d(out_conv1_1x1,
-                                                                                                       2))
-        pepx22 = self.pexp2_2(pepx21 + out_conv2_1x1)
-        pepx23 = self.pexp2_3(pepx22 + pepx21 + out_conv2_1x1)
-        pepx24 = self.pexp2_4(pepx23 + pepx21 + pepx22 + out_conv2_1x1)
+        for epoch in tqdm(range(epochs)):
+            metrics_collection = ScoringModel.train_epoch(model, train_data, criterion, optimizer, self.device,
+                                                          metrics_collection, metrics_fun)
+            train_metrics.append({'train/' + name: value for name, value in metrics_collection.compute().items()})
+            metrics_collection.reset()
+            metrics_collection = ScoringModel.test_epoch(model, validation_data, self.device, metrics_collection, metrics_fun)
 
-        out_conv3_1x1 = F.max_pool2d(self.conv3_1x1(pepx22 + pepx21 + pepx23 + pepx24 + out_conv2_1x1), 2)
+            validation_metrics.append({'validation/' + name: value for name, value in metrics_collection.compute().items()})
+            metrics_collection.reset()
 
-        pepx31 = self.pexp3_1(
-            F.max_pool2d(pepx24, 2) + F.max_pool2d(pepx21, 2) + F.max_pool2d(pepx22, 2) + F.max_pool2d(pepx23,
-                                                                                                       2) + F.max_pool2d(
-                out_conv2_1x1, 2))
-        pepx32 = self.pexp3_2(pepx31 + out_conv3_1x1)
-        pepx33 = self.pexp3_3(pepx31 + pepx32 + out_conv3_1x1)
-        pepx34 = self.pexp3_4(pepx31 + pepx32 + pepx33 + out_conv3_1x1)
-        pepx35 = self.pexp3_5(pepx31 + pepx32 + pepx33 + pepx34 + out_conv3_1x1)
-        pepx36 = self.pexp3_6(pepx31 + pepx32 + pepx33 + pepx34 + pepx35 + out_conv3_1x1)
+            if validation_metrics[-1]['validation/Accuracy'] > best_val_accuracy:
+                best_val_accuracy = validation_metrics[-1]['validation/Accuracy']
+                best_model_wts = copy.deepcopy(model.state_dict())
 
-        out_conv4_1x1 = F.max_pool2d(
-            self.conv4_1x1(pepx31 + pepx32 + pepx33 + pepx34 + pepx35 + pepx36 + out_conv3_1x1), 2)
+        torch.save({
+            'total_epochs': epochs,
+            'model_state_dict': best_model_wts,
+            'optimizer_state_dict': optimizer.state_dict(),
+        }, output_model_path)
 
-        pepx41 = self.pexp4_1(
-            F.max_pool2d(pepx31, 2) + F.max_pool2d(pepx32, 2) + F.max_pool2d(pepx32, 2) + F.max_pool2d(pepx34,
-                                                                                                       2) + F.max_pool2d(
-                pepx35, 2) + F.max_pool2d(pepx36, 2) + F.max_pool2d(out_conv3_1x1, 2))
-        pepx42 = self.pexp4_2(pepx41 + out_conv4_1x1)
-        pepx43 = self.pexp4_3(pepx41 + pepx42 + out_conv4_1x1)
-        flattened = self.flatten(pepx41 + pepx42 + pepx43 + out_conv4_1x1)
-
-        fc1out = F.relu(self.fc1(flattened))
-        fc2out = F.relu(self.fc2(fc1out))
-        logits = self.classifier(fc2out)
-        return logits
-
-    def forward_small_net(self, x):
-        x = F.max_pool2d(F.relu(self.conv1(x)), 2)
-
-        pepx11 = self.pexp1_1(x)
-        pepx12 = self.pexp1_2(pepx11)
-        pepx13 = self.pexp1_3(pepx12 + pepx11)
-
-        pepx21 = self.pexp2_1(F.max_pool2d(pepx13, 2) + F.max_pool2d(pepx11, 2) + F.max_pool2d(pepx12, 2))
-        pepx22 = self.pexp2_2(pepx21)
-        pepx23 = self.pexp2_3(pepx22 + pepx21)
-        pepx24 = self.pexp2_4(pepx23 + pepx21 + pepx22)
-
-        pepx31 = self.pexp3_1(
-            F.max_pool2d(pepx24, 2) + F.max_pool2d(pepx21, 2) + F.max_pool2d(pepx22, 2) + F.max_pool2d(pepx23, 2))
-        pepx32 = self.pexp3_2(pepx31)
-        pepx33 = self.pexp3_3(pepx31 + pepx32)
-        pepx34 = self.pexp3_4(pepx31 + pepx32 + pepx33)
-        pepx35 = self.pexp3_5(pepx31 + pepx32 + pepx33 + pepx34)
-        pepx36 = self.pexp3_6(pepx31 + pepx32 + pepx33 + pepx34 + pepx35)
-
-        pepx41 = self.pexp4_1(
-            F.max_pool2d(pepx31, 2) + F.max_pool2d(pepx32, 2) + F.max_pool2d(pepx32, 2) + F.max_pool2d(pepx34,
-                                                                                                       2) + F.max_pool2d(
-                pepx35, 2) + F.max_pool2d(pepx36, 2))
-        pepx42 = self.pexp4_2(pepx41)
-        pepx43 = self.pexp4_3(pepx41 + pepx42)
-        flattened = self.flatten(pepx41 + pepx42 + pepx43)
-
-        fc1out = F.relu(self.fc1(flattened))
-        fc2out = F.relu(self.fc2(fc1out))
-        logits = self.classifier(fc2out)
-        return logits
-
-
-class CNN(nn.Module):
-    def __init__(self, classes, model='resnext50_32x4d'):
-        super(CNN, self).__init__()
-        if (model == 'resnet18'):
-            self.cnn = models.resnet18(pretrained=True)
-            self.cnn.fc = nn.Linear(512, classes)
-        elif (model == 'resnext50_32x4d'):
-            self.cnn = models.resnext50_32x4d(pretrained=True)
-            self.cnn.classifier = nn.Linear(1280, classes)
-        elif (model == 'mobilenet_v2'):
-            self.cnn = models.mobilenet_v2(pretrained=True)
-            self.cnn.classifier = nn.Linear(1280, classes)
-
-    def forward(self, x):
-        return self.cnn(x)
-
-
-def load_pretrained_models_on_covid(model_path, model_name, num_classes, device):
-    cnn_ = CNN(3, model=model_name)
-    if model_path is not None:
-        cnn_.load_state_dict(torch.load(model_path, map_location=device)['state_dict'])
-    model = cnn_.cnn
-    set_parameter_requires_grad(model)
-    model.fc = nn.Linear(512, num_classes)
-    return model
+        #TODO:change logging of dataset, also debug it, fix, x axis
+        for train_metric, validation_metric in zip(train_metrics, validation_metrics):
+            wandb.log(train_metric)
+            wandb.log(validation_metric)
+        return train_metrics, validation_metrics

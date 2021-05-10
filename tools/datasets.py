@@ -4,11 +4,11 @@ import pandas as pd
 import torch
 from torchvision import transforms
 from torch.utils.data import Dataset
-from tools.DataProcessingTools import create_fig_1_filename, create_norm_covid_pneumonia_df_metadata,\
-    remove_duplicate_imgs_from_metadata_df, ToTensor, Rescale, Normalize, clf_next_element, read_csv, split_dataset
+from tools.data_processing_tools import create_fig_1_filename, create_norm_covid_pneumonia_df_metadata, \
+    remove_duplicate_imgs_from_metadata_df, ToTensor, Rescale, Normalize, split_dataset
 
 
-class LoadImgAnn(Dataset):
+class ScoringDataset(Dataset):
     def __init__(self, data, data_processing_function, next_element, transform, next_element_args: dict):
         self.transform = transform
         self.args = next_element_args
@@ -158,24 +158,25 @@ def generate_df(dataset_dir, requirements):
 
 def load_split_clf_data(covid_scoring_data_path, batch_size, data_processing_function, next_element,
                         tr_spl_end=0.8, val_spl_end=0.9):
-    assert os.path.splitext(covid_scoring_data_path)[-1] in ['.pt', '.csv', '.pth'],\
+    assert os.path.splitext(covid_scoring_data_path)[-1] in ['.pt', '.csv', '.pth'], \
         'wrong covid_scoring_data_path format'
 
     if os.path.splitext(covid_scoring_data_path)[-1] in ['.pt', '.pth']:
         dataset = torch.load(covid_scoring_data_path)
     else:
-        dataset = LoadImgAnn(covid_scoring_data_path,
-                             data_processing_function,
-                             next_element,
-                             transform=transforms.Compose([
-                                 Rescale((224, 224)),
-                                 ToTensor(),
-                                 Normalize(mean=[0.485, 0.456, 0.406],
-                                           std=[0.229, 0.224, 0.225])
-                             ])
-                             )
+        dataset = ScoringDataset(covid_scoring_data_path,
+                                 data_processing_function,
+                                 next_element,
+                                 transform=transforms.Compose([
+                                     Rescale((224, 224)),
+                                     ToTensor(),
+                                     Normalize(mean=[0.485, 0.456, 0.406],
+                                               std=[0.229, 0.224, 0.225])
+                                 ])
+                                 )
     data_dist = {'train': {'split_start': 0, 'split_end': tr_spl_end, 'batch_size': batch_size, 'dataset': None},
-                 'validation': {'split_start': tr_spl_end, 'split_end': val_spl_end, 'batch_size': batch_size, 'dataset': None},
+                 'validation': {'split_start': tr_spl_end, 'split_end': val_spl_end, 'batch_size': batch_size,
+                                'dataset': None},
                  'test': {'split_start': val_spl_end, 'split_end': 1, 'batch_size': 1, 'dataset': None},
                  }
     data_dist_split = split_dataset(dataset, data_dist)

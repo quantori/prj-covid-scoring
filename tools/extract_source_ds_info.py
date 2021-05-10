@@ -2,8 +2,8 @@ import argparse
 import os
 import pandas as pd
 from tqdm import tqdm
-from tools.CustomDataLoaders import generate_df
-from tools.DataProcessingTools import create_relative_path
+from tools.datasets import generate_df
+from tools.data_processing_tools import create_relative_path
 
 
 def init_requirements():

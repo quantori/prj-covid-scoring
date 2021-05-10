@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+
 import cv2
 import torch
 from torch.utils.data.sampler import SubsetRandomSampler
@@ -106,20 +107,19 @@ def read_csv(path):
     return df
 
 
-def clf_next_element(df, idx, args_dict: dict):
+def next_element_scoring_ds(df, idx, args_dict: dict):
     dir_path = args_dict['dir_path']
     path_version = args_dict['path_version']
+    score_type = args_dict['score_type']
 
     df_path = df.iloc[[idx]][path_version].values[0]
     img_full_path = os.path.join(dir_path, df_path)
-    label = int(df.iloc[[idx]]['score'].values[0])
-    img = cv2.imread(img_full_path.replace("\\", '/'))
-    return img, label
-
-
-def regr_next_element(df, idx):
-    img_full_path = df.iloc[[idx]]['full_path'].values[0]
-    label = df.iloc[[idx]]['consensus_score'].values[0]
+    if score_type == 'score':
+        label = np.int64(df.iloc[[idx]][score_type].values[0])
+    elif score_type == 'consensus_score':
+        label = np.float32(df.iloc[[idx]][score_type].values[0])
+    else:
+        raise ValueError('this score type {}, isn\'t defined'.format(score_type))
     img = cv2.imread(img_full_path.replace("\\", '/'))
     return img, label
 

@@ -3,7 +3,7 @@ import os
 import logging
 import pandas as pd
 from tqdm import tqdm
-from tools.DataProcessingTools import create_img_score, remove_extension
+from tools.data_processing_tools import create_img_score, remove_extension
 
 
 def create_score_values(row, dataset_name, img_score_values):

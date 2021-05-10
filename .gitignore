@@ -1,4 +1,9 @@
 dataset/
 .idea
 tools/__pycache__
+models/
+trained_models/
+wandb/
+tools/covid_annotations.csv
+tools/datasets_info.csv
 
