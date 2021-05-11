@@ -4,7 +4,6 @@ import json
 import base64
 import logging
 from typing import List, Optional, Tuple
-
 import cv2
 import numpy as np
 import supervisely_lib as sly

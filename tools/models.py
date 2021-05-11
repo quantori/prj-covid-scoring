@@ -1,18 +1,12 @@
-import os
-import cv2
-import argparse
-import multiprocessing
 from datetime import datetime
-from typing import List, Optional, Tuple, Any
-
-import torch
-import numpy as np
+import os
+from typing import List, Optional, Any
 import albumentations as A
-from torch.utils.data import DataLoader
+import numpy as np
 import segmentation_models_pytorch as smp
-import torchvision.transforms as transforms
-from torch.utils.data import Dataset as BaseDataset
-from tools.supervisely_tools import read_supervisely_project, convert_ann_to_mask
+import torch
+from torch.utils.data import DataLoader
+import wandb
 
 
 # TODO: think of adding more augmentation transformations such as Cutout, Grid Mask, MixUp, CutMix, Cutout, Mosaic
@@ -25,72 +19,7 @@ def augmentation_params() -> A.Compose:
     return A.Compose(aug_transforms)
 
 
-class Dataset(BaseDataset):
-    """Dataset class used for reading images/masks, applying augmentation and preprocessing."""
-    def __init__(self,
-                 dataset_dir: str,
-                 included_datasets: Optional[List[str]] = None,
-                 excluded_datasets: Optional[List[str]] = None,
-                 input_size: List[int] = (512, 512),
-                 class_name: str = 'COVID-19',
-                 augmentation_params=None,
-                 transform_params=None) -> None:
-
-        self.image_paths, self.ann_paths = read_supervisely_project(dataset_dir, included_datasets, excluded_datasets)
-        self.class_name = class_name
-        self.input_size = input_size
-        self.augmentation_params = augmentation_params
-        self.transform_params = transform_params
-
-    def __len__(self):
-        return len(self.image_paths)
-
-    # TODO: think of normalize_image implementation to transformation in __getitem__
-    @staticmethod
-    def normalize_image(image, target_min=0.0, target_max=1.0, target_type=np.float32):
-        a = (target_max - target_min) / (image.max() - image.min())
-        b = target_max - a * image.max()
-        image_norm = (a * image + b).astype(target_type)
-        return image_norm
-
-    def __getitem__(self,
-                    idx: int) -> Tuple[np.ndarray, np.ndarray]:
-        image_path = self.image_paths[idx]
-        ann_path = self.ann_paths[idx]
-        image = cv2.imread(image_path)
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        mask = convert_ann_to_mask(ann_path=ann_path, class_name=self.class_name)
-
-        # Apply augmentation
-        if self.augmentation_params:
-            sample = self.augmentation_params(image=image, mask=mask)
-            image, mask = sample['image'], sample['mask']
-
-        # Apply transformation
-        if self.transform_params:
-            # TODO: input_range in self.transform_params['input_range'] may vary in different ranges not only in [0; 1],
-            #       think of image normalization to a range of [a; b]
-            preprocess_image = transforms.Compose([transforms.ToTensor(),
-                                                   transforms.Resize(size=self.input_size,
-                                                                     interpolation=2),
-                                                   transforms.Normalize(mean=self.transform_params['mean'],
-                                                                        std=self.transform_params['std'])]
-                                                  )
-            preprocess_mask = transforms.Compose([transforms.ToTensor(),
-                                                  transforms.Resize(size=self.input_size,
-                                                                    interpolation=0)])
-            image = preprocess_image(image)
-            mask = preprocess_mask(mask)
-
-            # Used for debug only
-            # transformed_image = transforms.ToPILImage()(image)
-            # transformed_mask = transforms.ToPILImage()(mask)
-            # transformed_image.show()
-            # transformed_mask.show()
-        return image, mask
-
-
-class Model:
+class SegmentationModel:
     def __init__(self,
                  dataset_dir: str = 'dataset/covid_segmentation',
                  included_datasets: Optional[List[str]] = None,
@@ -106,8 +35,10 @@ class Model:
                  classes: int = 1,
                  activation: str = 'sigmoid',
                  class_name: str = 'COVID-19',
-                 save_dir: str = 'models') -> None:
-
+                 save_dir: str = 'models',
+                 wandb_api_key: str = 'cb108eee503905d043b3d160df1498a5ac4f8f77',
+                 wandb_project_name: str = 'my-test-project',
+                 log_imgs_ds: DataLoader = None) -> None:
         # Dataset settings
         self.dataset_dir = dataset_dir
         self.included_datasets = included_datasets
@@ -133,6 +64,64 @@ class Model:
         # self.model = self._get_model()        # Think of the best place for calling _get_model(): __init__ or train()
         self.print_model_settings()
 
+        self.covid_segm_classes = {1: 'COVID-19', 0: 'Normal'}
+        self.log_imgs_ds = log_imgs_ds
+        self.wandb_api_key = wandb_api_key
+        self.wandb_project_name = wandb_project_name
+
+        if not (self.log_imgs_ds is None):
+            os.environ['WANDB_API_KEY'] = self.wandb_api_key
+            run_name = self.wandb_project_name + '_' + str(datetime.now()).replace(':', '.')
+            wandb_run = wandb.init(project=self.wandb_project_name, entity='big_data_lab', name=run_name)
+
+    def log_metrics_wandb(self, train_logs, val_logs, test_logs):
+        train_logs = {k + '_train': v for k, v in train_logs.items()}
+        val_logs = {k + '_val': v for k, v in val_logs.items()}
+        test_logs = {k + '_test': v for k, v in test_logs.items()}
+
+        wandb.log(train_logs)
+        wandb.log(val_logs)
+        wandb.log(test_logs)
+
+    def log_imgs_wandb(self, model):
+        if self.log_imgs_ds is None:
+            return 0
+
+        mean = self.log_imgs_ds['train'].dataset.transform_params['mean']
+        std = self.log_imgs_ds['train'].dataset.transform_params['std']
+
+        for data_subset in self.log_imgs_ds:
+            original_image, ground_truth_mask = next(iter(self.log_imgs_ds[data_subset]))
+            prediction_mask = model(original_image)
+            logging_imgs = []
+
+            for img_num in range(2):
+                img = (original_image[img_num, :, :, :].permute(1, 2, 0).numpy())
+                processed_img = (((img * std) + mean) * 255).astype(np.uint8)
+                pred_mask = (prediction_mask[img_num, 0, :, :].detach().numpy() > 0.5)
+                gt_mask = ground_truth_mask[img_num, 0, :, :].detach().numpy()
+
+                logging_imgs.append(
+                    wandb.Image(processed_img, masks={
+                        "predictions": {
+                            "mask_data": pred_mask,
+                            "class_labels": self.covid_segm_classes
+                        },
+                        "ground_truth": {
+                            "mask_data": gt_mask,
+                            "class_labels": self.covid_segm_classes
+                        }
+                    })
+                )
+            wandb.log({'preds_' + data_subset: logging_imgs})
+
+    def log_wandb(self, model, train_logs, val_logs, test_logs):
+        if self.wandb_api_key is None:
+            return 0
+
+        self.log_imgs_wandb(model)
+        self.log_metrics_wandb(train_logs, val_logs, test_logs)
+
     def print_model_settings(self) -> None:
         print('\033[1m\033[4m\033[93m' + '\nDataset settings:' + '\033[0m')
         print('\033[92m' + 'Class name: \t\t{:s}'.format(self.class_name) + '\033[0m')
@@ -143,7 +132,8 @@ class Model:
         print('\033[1m\033[4m\033[93m' + '\nModel settings:' + '\033[0m')
         print('\033[92m' + 'Model name: \t\t{:s}'.format(self.model_name) + '\033[0m')
         print('\033[92m' + 'Encoder: \t\t{:s}/{:s}'.format(self.encoder_name, self.encoder_weights) + '\033[0m')
-        print('\033[92m' + 'Input size: \t\t{:d}x{:d}x{:d}'.format(self.input_size[0], self.input_size[1], self.in_channels) + '\033[0m')
+        print('\033[92m' + 'Input size: \t\t{:d}x{:d}x{:d}'.format(self.input_size[0], self.input_size[1],
+                                                                   self.in_channels) + '\033[0m')
         print('\033[92m' + 'Class count: \t\t{:d}'.format(self.classes) + '\033[0m')
         print('\033[92m' + 'Activation: \t\t{:s}'.format(self.activation) + '\033[0m\n')
 
@@ -222,46 +212,10 @@ class Model:
 
         return model
 
-    def train(self):
-
+    def train(self, train_loader, val_loader, test_loader):
         # Create segmentation model
         model = self._get_model()
-
-        preprocessing_params = smp.encoders.get_preprocessing_params(encoder_name=self.encoder_name,
-                                                                     pretrained=self.encoder_weights)
-        # TODO: Move datasets out of the class method and rewrite the dataset according to train/val/test split
-        train_ds = Dataset(dataset_dir=self.dataset_dir,
-                           input_size=self.input_size,
-                           class_name=self.class_name,
-                           included_datasets=self.included_datasets,                    # Debug: covid: ['Actualmed-COVID-chestxray-dataset'], lungs: ['Shenzhen']
-                           excluded_datasets=self.excluded_datasets,
-                           augmentation_params=self.augmentation_params,
-                           transform_params=preprocessing_params)
-        val_ds = Dataset(dataset_dir=self.dataset_dir,
-                         input_size=self.input_size,
-                         class_name=self.class_name,
-                         included_datasets=['Figure1-COVID-chestxray-dataset'],         # Debug: covid: ['Figure1-COVID-chestxray-dataset'], lungs: ['Montgomery']
-                         excluded_datasets=self.excluded_datasets,
-                         augmentation_params=None,
-                         transform_params=preprocessing_params)
-        test_ds = Dataset(dataset_dir=self.dataset_dir,
-                          input_size=self.input_size,
-                          class_name=self.class_name,
-                          included_datasets=['COVID-19-Radiography-Database'],         # Debug: covid: ['Figure1-COVID-chestxray-dataset'], lungs: ['Montgomery']
-                          excluded_datasets=self.excluded_datasets,
-                          augmentation_params=None,
-                          transform_params=preprocessing_params)
-
-        # Used only for debug
-        # image_train, mask_train = train_ds[10]
-        # image_val, mask_val = val_ds[5]
-
-        num_cores = multiprocessing.cpu_count()
-        train_loader = DataLoader(dataset=train_ds, batch_size=self.batch_size, shuffle=True, num_workers=num_cores)
-        val_loader = DataLoader(dataset=val_ds, batch_size=self.batch_size, shuffle=False, num_workers=num_cores)
-        test_loader = DataLoader(dataset=test_ds, batch_size=self.batch_size, shuffle=False, num_workers=num_cores)
-
-        loss = smp.utils.losses.BCEWithLogitsLoss() + smp.utils.losses.DiceLoss()   # DiceLoss, JaccardLoss, BCEWithLogitsLoss, BCELoss
+        loss = smp.utils.losses.BCEWithLogitsLoss() + smp.utils.losses.DiceLoss()  # DiceLoss, JaccardLoss, BCEWithLogitsLoss, BCELoss
         metrics = [smp.utils.metrics.Fscore(threshold=0.5),
                    smp.utils.metrics.IoU(threshold=0.5),
                    smp.utils.metrics.Accuracy(threshold=0.5),
@@ -277,31 +231,24 @@ class Model:
         valid_epoch = smp.utils.train.ValidEpoch(model,
                                                  loss=loss,
                                                  metrics=metrics,
-                                                 stage_name='valid',        # add stage_name arg to ValidEpoch __init__
+                                                 stage_name='valid',  # add stage_name arg to ValidEpoch __init__
                                                  device=self.device,
                                                  verbose=True)
         test_epoch = smp.utils.train.ValidEpoch(model,
                                                 loss=loss,
-                                                stage_name='test',          # add stage_name arg to ValidEpoch __init__
+                                                stage_name='test',  # add stage_name arg to ValidEpoch __init__
                                                 metrics=metrics,
                                                 device=self.device,
                                                 verbose=True)
 
         max_score = 0
-        for i in range(0, self.epochs):
+        for epoch in range(0, self.epochs):
+            print('\nEpoch: {:d}'.format(epoch))
 
-            print('\nEpoch: {:d}'.format(i))
             train_logs = train_epoch.run(train_loader)
             val_logs = valid_epoch.run(val_loader)
             test_logs = test_epoch.run(test_loader)
-
-            # For debugging only (not finished)
-            # img_path = 'dataset/covid_segmentation/Actualmed-COVID-chestxray-dataset/img/CR.1.2.840.113564.1722810170.20200405065153640420.1003000225002.png'
-            # img_size = (512, 512)
-            # img = cv2.imread(img_path, cv2.IMREAD_COLOR)
-            # dims = (img.shape[0], img.shape[1])
-            # if dims != img_size:
-            #     img = cv2.resize(img, img_size, interpolation=cv2.INTER_CUBIC)
+            self.log_wandb(model, train_logs, val_logs, test_logs)
 
             # TODO: add logging of metrics and images to WANDB
             if max_score < val_logs['iou_score']:
@@ -310,39 +257,6 @@ class Model:
                 torch.save(model, best_weights_path)
                 print('Best weights are saved to {:s}'.format(best_weights_path))
 
-            if i == 25:
+            if epoch == 25:
                 optimizer.param_groups[0]['lr'] = 1e-5
                 print('Decrease decoder learning rate to {:f}'.format(optimizer.param_groups[0]['lr']))
-
-
-if __name__ == '__main__':
-
-    # TODO: add other key options if needed
-    parser = argparse.ArgumentParser(description='Segmentation models')
-    parser.add_argument('--dataset_dir', default='dataset/covid_segmentation', type=str, help='covid_segmentation or lungs_segmentation')
-    parser.add_argument('--class_name', default='COVID-19', type=str, help='COVID-19 or Lungs')
-    parser.add_argument('--input_size', nargs='+', default=(512, 512), type=int)
-    parser.add_argument('--device', default='cpu', type=str, help='cuda or cpu')
-    parser.add_argument('--model_name', default='Unet', type=str, help='Unet, Unet++, DeepLabV3, DeepLabV3+, FPN, Linknet, or PSPNet')
-    parser.add_argument('--encoder_name', default='resnet18', type=str)
-    parser.add_argument('--encoder_weights', default='imagenet', type=str, help='imagenet, ssl or swsl')
-    parser.add_argument('--batch_size', default=4, type=int)
-    parser.add_argument('--epochs', default=30, type=int)
-    parser.add_argument('--save_dir', default='models', type=str)
-    args = parser.parse_args()
-
-
-    # TODO: add train/val/test dataset here + split images/masks
-
-    model = Model(dataset_dir=args.dataset_dir,
-                  class_name=args.class_name,
-                  input_size=args.input_size,
-                  included_datasets=['Actualmed-COVID-chestxray-dataset'],      # Temporal ds for train debugging
-                  # included_datasets=None,
-                  excluded_datasets=None,
-                  model_name=args.model_name,
-                  encoder_name=args.encoder_name,
-                  encoder_weights=args.encoder_weights,
-                  batch_size=args.batch_size,
-                  epochs=args.epochs)
-    model.train()

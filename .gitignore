@@ -2,3 +2,7 @@
 .dvc
 /dataset/
 /models/
+__pycache__/
+*.pyc
+wandb/
+trained_models/
