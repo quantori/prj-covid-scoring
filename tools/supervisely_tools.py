@@ -53,17 +53,17 @@ def convert_base64_to_image(s: str) -> np.ndarray:
 
     img_decoded = cv2.imdecode(n, cv2.IMREAD_UNCHANGED)
     if (len(img_decoded.shape) == 3) and (img_decoded.shape[2] >= 4):
-        mask = img_decoded[:, :, 3].astype(np.uint8)                        # 4-channel images
+        mask = img_decoded[:, :, 3].astype(np.uint8)  # 4-channel images
     elif len(img_decoded.shape) == 2:
-        mask = img_decoded.astype(np.uint8)                                 # flat 2D mask
+        mask = img_decoded.astype(np.uint8)  # flat 2D mask
     else:
         raise RuntimeError('Wrong internal mask format.')
     return mask
 
 
 def convert_ann_to_mask(ann_path: str,
+                        filter_mask: bool = True,
                         class_name: str = 'COVID-19') -> np.ndarray:
-
     with open(ann_path) as json_file:
         data = json.load(json_file)
 
@@ -75,17 +75,28 @@ def convert_ann_to_mask(ann_path: str,
         if obj['classTitle'] == class_name:
             encoded_bitmap = obj['bitmap']['data']
             _mask = convert_base64_to_image(s=encoded_bitmap)
+
+            if filter_mask:
+                min_dim = min(_mask.shape)
+                kernel_size = int(0.05 * min_dim)
+                kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kernel_size, kernel_size))
+                _mask = cv2.morphologyEx(_mask, cv2.MORPH_OPEN, kernel, iterations=3)
+
             x, y = obj['bitmap']['origin']
             _mask_height, _mask_width = _mask.shape
-            mask[y: y+_mask_height, x:x+_mask_width] = _mask
+            mask[y: y + _mask_height, x:x + _mask_width] = _mask
         else:
             continue
     mask = np.expand_dims(mask, axis=2)
     return mask
 
 
-# image_paths, ann_paths = read_supervisely_project(sly_project_dir='dataset', included_datasets=['Actualmed-COVID-chestxray-dataset'])
-# ann_path = ann_paths[10]
-# mask = convert_ann_to_mask(ann_path=ann_path, class_name='COVID-19')
-# cv2.imwrite('abc.png', mask)
-# print('')
+if __name__ == '__main__':
+
+    image_paths, ann_paths = read_supervisely_project(sly_project_dir='dataset/covid_segmentation',
+                                                      included_datasets=['Actualmed-COVID-chestxray-dataset'])
+    for idx in range(30):
+        ann_path = ann_paths[idx]
+        mask = convert_ann_to_mask(ann_path=ann_path,
+                                   filter_mask=True,
+                                   class_name='COVID-19')
