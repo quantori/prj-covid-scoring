@@ -4,6 +4,7 @@ import json
 import base64
 import logging
 from typing import List, Optional, Tuple
+
 import cv2
 import numpy as np
 import supervisely_lib as sly
@@ -14,8 +15,8 @@ logging.basicConfig(level=logging.INFO)
 def read_supervisely_project(sly_project_dir: str,
                              included_datasets: Optional[List[str]] = None,
                              excluded_datasets: Optional[List[str]] = None) -> Tuple[List[str], List[str]]:
-    img_names: List = []
-    ann_names: List = []
+    img_paths: List = []
+    ann_paths: List = []
 
     logging.debug('Processing of {:s}...'.format(sly_project_dir))
     assert os.path.exists(sly_project_dir) and os.path.isdir(sly_project_dir), 'Wrong path: {:s}'.format(
@@ -35,10 +36,10 @@ def read_supervisely_project(sly_project_dir: str,
 
         for item_name in dataset_fs:
             img_path, ann_path = dataset_fs.get_item_paths(item_name)
-            img_names.append(img_path)
-            ann_names.append(ann_path)
+            img_paths.append(img_path)
+            ann_paths.append(ann_path)
 
-    return img_names, ann_names
+    return img_paths, ann_paths
 
 
 def convert_base64_to_image(s: str) -> np.ndarray:
@@ -93,7 +94,8 @@ def convert_ann_to_mask(ann_path: str,
 if __name__ == '__main__':
 
     image_paths, ann_paths = read_supervisely_project(sly_project_dir='dataset/covid_segmentation',
-                                                      included_datasets=['Actualmed-COVID-chestxray-dataset'])
+                                                      included_datasets=['Actualmed-COVID-chestxray-dataset',
+                                                                         'COVID-19-Radiography-Database'])
     for idx in range(30):
         ann_path = ann_paths[idx]
         mask = convert_ann_to_mask(ann_path=ann_path,
