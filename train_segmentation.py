@@ -16,6 +16,9 @@ def main(dataset_dir, model_name, encoder_name, encoder_weights, batch_size, epo
     img_paths, ann_paths, dataset_names = read_supervisely_project(sly_project_dir=dataset_dir,
                                                                    included_datasets=included_datasets,
                                                                    excluded_datasets=excluded_datasets)
+
+    # TODO: split across different classes (do that after bugfix with the W&B logging)
+    # TODO: we may use a for loop like -> for class_name in class_names: subsets = split_data(...., class_name ,....)
     subsets = split_data(img_paths=img_paths,
                          ann_paths=ann_paths,
                          dataset_names=dataset_names,
@@ -36,7 +39,8 @@ def main(dataset_dir, model_name, encoder_name, encoder_weights, batch_size, epo
         datasets[subset_name] = dataset
 
     # If debug is frozen, use num_workers = 0
-    num_workers = 4 * device_count()
+    # num_workers = 4 * device_count()
+    num_workers = 0
     train_loader = DataLoader(datasets['train'], batch_size=batch_size, num_workers=num_workers)
     val_loader = DataLoader(datasets['val'], batch_size=batch_size, num_workers=num_workers)
     test_loader = DataLoader(datasets['test'], batch_size=batch_size, num_workers=num_workers)
@@ -85,8 +89,8 @@ if __name__ == '__main__':
     parser.add_argument('--save_dir', default='models', type=str)
     parser.add_argument('--included_datasets', default=None, type=str)
     parser.add_argument('--excluded_datasets', default=None, type=str)
-    parser.add_argument('--wandb_project_name', default='my-test-project', type=str)
-    parser.add_argument('--wandb_api_key', default='cb108eee503905d043b3d160df1498a5ac4f8f77', type=str)
+    parser.add_argument('--wandb_project_name', default='my_test_project', type=str)
+    parser.add_argument('--wandb_api_key', default='b45cbe889f5dc79d1e9a0c54013e6ab8e8afb871', type=str)
     args = parser.parse_args()
     args.excluded_datasets = ['covid-chestxray-dataset', 'COVID-19-Radiography-Database']
     main(args.dataset_dir, args.model_name, args.encoder_name, args.encoder_weights, args.batch_size,
