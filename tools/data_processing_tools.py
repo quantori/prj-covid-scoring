@@ -1,8 +1,8 @@
 import json
-from typing import List, Optional, Tuple, Dict, Union
+from typing import List, Tuple, Dict, Union
 
 import numpy as np
-from sklearn.model_selection import train_test_split, StratifiedShuffleSplit
+from sklearn.model_selection import train_test_split
 
 
 def normalize_image(image: np.ndarray,
