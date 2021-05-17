@@ -35,7 +35,7 @@ class SegmentationModel:
                  class_name: str = 'COVID-19',
                  augmentation_params: A.Compose = None,
                  save_dir: str = 'models',
-                 wandb_api_key: str = 'cb108eee503905d043b3d160df1498a5ac4f8f77',
+                 wandb_api_key: str = 'b45cbe889f5dc79d1e9a0c54013e6ab8e8afb871',
                  wandb_project_name: str = 'my-test-project') -> None:
 
         # Dataset settings
@@ -59,8 +59,6 @@ class SegmentationModel:
         os.makedirs(self.model_dir) if not os.path.exists(self.model_dir) else False
         self.print_model_settings()
 
-        # self.covid_segm_classes = {1: 'COVID-19', 0: 'Normal'}
-        # self.log_imgs_ds = log_imgs_ds
         self.wandb_api_key = wandb_api_key
         self.wandb_project_name = wandb_project_name
 
@@ -73,44 +71,49 @@ class SegmentationModel:
         wandb.log(val_logs)
         wandb.log(test_logs)
 
-    # TODO: Predict images using DataLoader and log them to W&B
-    # TODO: Fix logging
+    # TODO: Predict images using DataLoader and log them to W&B (still needs bugfixing related to masks)
     def _log_images(self, model, logging_loader) -> Union[int, None]:
         if logging_loader is None:
             return 0
 
         with torch.no_grad():
             logging_images = []
-            for idx, (image, mask_gt) in enumerate(logging_loader):
+            for idx, (image, mask) in enumerate(logging_loader):
                 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-                image, mask_gt = image.to(device), mask_gt.to(device)
+                image, mask = image.to(device), mask.to(device)
                 prediction = model(image)
 
-                image_log = image.squeeze_(dim=0)
-                image_log = image_log.permute(1, 2, 0)
-                # processed_img = (((img * std) + mean) * 255).astype(np.uint8)     # TODO: Convert back using transform_params['mean'] and transform_params['std']
-                image_log = image_log.detach().cpu().numpy()
-                image_log = normalize_image(image=image_log, target_min=0, target_max=255, target_type=np.uint8)
-                image_log = cv2.cvtColor(image_log, cv2.COLOR_BGR2GRAY)
+                image_bg = torch.clone(image).squeeze(dim=0)
+                image_bg = image_bg.permute(1, 2, 0)
+                # image_bg = (((image_bg * std) + mean) * 255).astype(np.uint8)     # TODO: Convert back using transform_params['mean'] and transform_params['std']
+                image_bg = image_bg.detach().cpu().numpy()
+                image_bg = normalize_image(image=image_bg, target_min=0, target_max=255, target_type=np.uint8)
+                image_bg = cv2.cvtColor(image_bg, cv2.COLOR_BGR2GRAY)
 
-                mask_gt_log = mask_gt.squeeze_(dim=0)
-                mask_gt_log = mask_gt_log.permute(1, 2, 0)
-                mask_gt_log = mask_gt_log.detach().cpu().numpy()
-                mask_gt_log = mask_gt_log.squeeze()
-                mask_gt_log = normalize_image(image=mask_gt_log, target_min=0, target_max=255, target_type=np.uint8)
+                prob_map = torch.clone(prediction).squeeze()
+                prob_map = prob_map.detach().cpu().numpy()
+                prob_map = normalize_image(image=prob_map, target_min=0, target_max=255, target_type=np.uint8)
 
-                mask_pred_log = prediction.squeeze_(dim=0)
-                mask_pred_log = mask_pred_log.permute(1, 2, 0)
-                mask_pred_log = mask_pred_log.detach().cpu().numpy()
-                mask_pred_log = mask_pred_log.squeeze()
-                mask_pred_log = normalize_image(image=mask_pred_log, target_min=0, target_max=255, target_type=np.uint8)
+                mask_gt = torch.clone(mask).squeeze()
+                mask_gt = mask_gt.detach().cpu().numpy()
+                mask_gt = normalize_image(image=mask_gt, target_min=0, target_max=255, target_type=np.uint8)
 
-                # TODO: logging needs fixing
-                wandb.log({'Mask comparison': [wandb.Image(image_log,
-                                                           masks={'prediction': {'mask_data': mask_pred_log, 'class_labels': self.labels()},
-                                                                  'ground truth': {'mask_data': mask_gt_log, 'class_labels': self.labels()}},
-                                                           caption='Image {:d}'.format(idx))]})
+                mask_pred = torch.clone(prediction).squeeze()
+                mask_pred = mask_pred.detach().cpu().numpy()
+                mask_pred = normalize_image(image=mask_pred, target_min=0, target_max=255, target_type=np.uint8)
+                mask_pred = 255*(mask_pred > 127).astype(np.uint8)
 
+                logging_images.append(wandb.Image(image_bg,
+                                                  masks={'probability map': {'mask_data': prob_map, 'class_labels': self.labels()},
+                                                         'prediction': {'mask_data': mask_pred, 'class_labels': self.labels()},
+                                                         'ground truth': {'mask_data': mask_gt, 'class_labels': self.labels()},
+                                                         },
+                                                  caption='Image {:d}'.format(idx+1)))
+
+            wandb.log({'Segmentation comparison': logging_images})
+
+
+        # TODO: Delete the following code
                 # wandb.log({'preds_' + 'temp_name': logging_images})
 
                 # logging_images.append(
@@ -148,18 +151,20 @@ class SegmentationModel:
         #         )
         #     wandb.log({'preds_' + data_subset: logging_imgs})
 
+    # TODO: changes are needed for multiple classes
     def labels(self):
         l = {}
         for i, label in enumerate([self.class_name]):
             l[i] = label
         return l
 
-    def log_wandb(self, model, train_logs, val_logs, test_logs):
-        if self.wandb_api_key is None:
-            return 0
-
-        self._log_images(model)
-        self._log_metrics(train_logs, val_logs, test_logs)
+    # TODO: Delete
+    # def log_wandb(self, model, train_logs, val_logs, test_logs):
+    #     if self.wandb_api_key is None:
+    #         return 0
+    #
+    #     self._log_images(model)
+    #     self._log_metrics(train_logs, val_logs, test_logs)
 
     def print_model_settings(self) -> None:
         print('\033[1m\033[4m\033[93m' + '\nModel settings:' + '\033[0m')
