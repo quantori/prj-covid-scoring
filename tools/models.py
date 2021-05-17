@@ -2,14 +2,12 @@ import os
 from datetime import datetime
 from typing import List, Any, Union
 
-import cv2
 import wandb
 import torch
 import numpy as np
 import albumentations as A
 import segmentation_models_pytorch as smp
 
-from tools.data_processing_tools import normalize_image
 
 # TODO: think of adding more augmentation transformations such as Cutout, Grid Mask, MixUp, CutMix, Cutout, Mosaic
 #       https://towardsdatascience.com/data-augmentation-in-yolov4-c16bd22b2617
@@ -19,12 +17,6 @@ def augmentation_params() -> A.Compose:
         # A.RandomCrop(height=600, width=600, always_apply=True)
     ]
     return A.Compose(aug_transforms)
-
-
-def show(img, img_name="img"):
-    cv2.imshow(img_name, np.array(img, dtype=np.uint8))
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
 
 
 class SegmentationModel:
@@ -42,7 +34,7 @@ class SegmentationModel:
                  augmentation_params: A.Compose = None,
                  save_dir: str = 'models',
                  wandb_api_key: str = 'b45cbe889f5dc79d1e9a0c54013e6ab8e8afb871',
-                 wandb_project_name: str = 'my-test-project') -> None:
+                 wandb_project_name: str = 'test_project') -> None:
 
         # Dataset settings
         self.augmentation_params = augmentation_params
@@ -70,14 +62,11 @@ class SegmentationModel:
 
     @staticmethod
     def _log_metrics(train_logs, val_logs, test_logs) -> None:
-        train_logs = {k + '_train': v for k, v in train_logs.items()}
-        val_logs = {k + '_val': v for k, v in val_logs.items()}
-        test_logs = {k + '_test': v for k, v in test_logs.items()}
-        wandb.log(train_logs)
-        wandb.log(val_logs)
-        wandb.log(test_logs)
+        for key in train_logs:
+            wandb.log({'train/{:s}'.format(key): train_logs[key]})
+            wandb.log({'val/{:s}'.format(key): val_logs[key]})
+            wandb.log({'test/{:s}'.format(key): test_logs[key]})
 
-    # TODO: Predict images using DataLoader and log them to W&B (still needs bugfixing related to masks)
     def _log_images(self, model, logging_loader) -> Union[int, None]:
         if logging_loader is None:
             return 0
@@ -85,7 +74,8 @@ class SegmentationModel:
         std = torch.tensor(logging_loader.dataset.transform_params['std'])
 
         with torch.no_grad():
-            logging_images = []
+            segmentation_masks = []
+            segmentation_maps = []
             for idx, (image, mask) in enumerate(logging_loader):
                 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
                 image, mask = image.to(device), mask.to(device)
@@ -93,7 +83,7 @@ class SegmentationModel:
 
                 image_bg = torch.clone(image).squeeze(dim=0)
                 image_bg = image_bg.permute(1, 2, 0)
-                image_bg = (((image_bg * std) + mean) * 255).detach().cpu().numpy().astype(np.uint8)
+                image_bg = (((image_bg.detach().cpu() * std) + mean) * 255).numpy().astype(np.uint8)
 
                 mask_gt = torch.clone(mask).squeeze()
                 mask_gt = mask_gt.detach().cpu().numpy().astype(np.uint8)
@@ -104,15 +94,16 @@ class SegmentationModel:
                 prob_map = torch.clone(prediction).squeeze()
                 prob_map = (prob_map * 255).detach().cpu().numpy().astype(np.uint8)
 
-                logging_images.append(wandb.Image(image_bg,
-                                                  masks={'prediction': {'mask_data': mask_pred, 'class_labels': self.labels()},
-                                                         'ground truth': {'mask_data': mask_gt, 'class_labels': self.labels()},
-                                                         },
-                                                  caption='Image {:d}'.format(idx+1)))
-                logging_images.append(wandb.Image(prob_map, caption='Prob Map {:d}'.format(idx+1)))
-            wandb.log({'Segmentation comparison': logging_images})
+                segmentation_masks.append(wandb.Image(image_bg,
+                                                 masks={'Prediction': {'mask_data': mask_pred, 'class_labels': self.labels()},
+                                                        'Ground truth': {'mask_data': mask_gt, 'class_labels': self.labels()},
+                                                        },
+                                                 caption='Mask {:d}'.format(idx+1)))
+                segmentation_maps.append(wandb.Image(prob_map, caption='Map {:d}'.format(idx+1)))
+            wandb.log({'Segmentation masks': segmentation_masks})
+            wandb.log({'Probability maps': segmentation_maps})
 
-    # TODO: changes are needed for multiple classes
+    # TODO: not obvious solution
     def labels(self):
         l = {0: 'Normal'}
         for i, label in enumerate([self.class_name], 1):
@@ -121,13 +112,13 @@ class SegmentationModel:
 
     def print_model_settings(self) -> None:
         print('\033[1m\033[4m\033[93m' + '\nModel settings:' + '\033[0m')
-        print('\033[92m' + 'Class name: \t\t{:s}'.format(self.class_name) + '\033[0m')
-        print('\033[92m' + 'Model name: \t\t{:s}'.format(self.model_name) + '\033[0m')
-        print('\033[92m' + 'Encoder: \t\t{:s}/{:s}'.format(self.encoder_name, self.encoder_weights) + '\033[0m')
-        print('\033[92m' + 'Input size: \t\t{:d}x{:d}x{:d}'.format(self.input_size[0], self.input_size[1],
-                                                                   self.in_channels) + '\033[0m')
-        print('\033[92m' + 'Class count: \t\t{:d}'.format(self.classes) + '\033[0m')
-        print('\033[92m' + 'Activation: \t\t{:s}'.format(self.activation) + '\033[0m\n')
+        print('\033[92m' + 'Class name:     {:s}'.format(self.class_name) + '\033[0m')
+        print('\033[92m' + 'Model name:     {:s}'.format(self.model_name) + '\033[0m')
+        print('\033[92m' + 'Encoder name:   {:s}'.format(self.encoder_name) + '\033[0m')
+        print('\033[92m' + 'Weights used:   {:s}'.format(self.encoder_weights) + '\033[0m')
+        print('\033[92m' + 'Input size:     {:d}x{:d}x{:d}'.format(self.input_size[0], self.input_size[1], self.in_channels) + '\033[0m')
+        print('\033[92m' + 'Class count:    {:d}'.format(self.classes) + '\033[0m')
+        print('\033[92m' + 'Activation:     {:s}'.format(self.activation) + '\033[0m\n')
 
     def device_selection(self) -> str:
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -208,7 +199,6 @@ class SegmentationModel:
         # Create segmentation model
         model = self._get_model()
         loss = smp.utils.losses.DiceLoss()  # DiceLoss, JaccardLoss, BCEWithLogitsLoss, BCELoss
-        # loss = smp.utils.losses.BCEWithLogitsLoss() + smp.utils.losses.DiceLoss()  # DiceLoss, JaccardLoss, BCEWithLogitsLoss, BCELoss
         metrics = [smp.utils.metrics.Fscore(threshold=0.5),
                    smp.utils.metrics.IoU(threshold=0.5),
                    smp.utils.metrics.Accuracy(threshold=0.5),
@@ -221,9 +211,11 @@ class SegmentationModel:
 
         # Initialize W&B
         if not (self.wandb_api_key is None):
-
             os.environ['WANDB_API_KEY'] = self.wandb_api_key
             wandb.init(project=self.wandb_project_name, entity='big_data_lab', name=self.run_name)
+        # wandb.watch(model, log='all', log_freq=10)
+
+        # TODO: log hyperparameters of the model and dataset
 
         max_score = 0
         for epoch in range(0, self.epochs):
@@ -235,6 +227,8 @@ class SegmentationModel:
 
             self._log_images(model, logging_loader)
             self._log_metrics(train_logs, val_logs, test_logs)
+            # TODO: log best metrics
+            # TODO: log best epoch
 
             if max_score < val_logs['iou_score']:
                 max_score = val_logs['iou_score']
