@@ -21,6 +21,12 @@ def augmentation_params() -> A.Compose:
     return A.Compose(aug_transforms)
 
 
+def show(img, img_name="img"):
+    cv2.imshow(img_name, np.array(img, dtype=np.uint8))
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
+
+
 class SegmentationModel:
     def __init__(self,
                  model_name: str = 'Unet',
@@ -75,6 +81,8 @@ class SegmentationModel:
     def _log_images(self, model, logging_loader) -> Union[int, None]:
         if logging_loader is None:
             return 0
+        mean = torch.tensor(logging_loader.dataset.transform_params['mean'])
+        std = torch.tensor(logging_loader.dataset.transform_params['std'])
 
         with torch.no_grad():
             logging_images = []
@@ -85,86 +93,31 @@ class SegmentationModel:
 
                 image_bg = torch.clone(image).squeeze(dim=0)
                 image_bg = image_bg.permute(1, 2, 0)
-                # image_bg = (((image_bg * std) + mean) * 255).astype(np.uint8)     # TODO: Convert back using transform_params['mean'] and transform_params['std']
-                image_bg = image_bg.detach().cpu().numpy()
-                image_bg = normalize_image(image=image_bg, target_min=0, target_max=255, target_type=np.uint8)
-                image_bg = cv2.cvtColor(image_bg, cv2.COLOR_BGR2GRAY)
-
-                prob_map = torch.clone(prediction).squeeze()
-                prob_map = prob_map.detach().cpu().numpy()
-                prob_map = normalize_image(image=prob_map, target_min=0, target_max=255, target_type=np.uint8)
+                image_bg = (((image_bg * std) + mean) * 255).detach().cpu().numpy().astype(np.uint8)
 
                 mask_gt = torch.clone(mask).squeeze()
-                mask_gt = mask_gt.detach().cpu().numpy()
-                mask_gt = normalize_image(image=mask_gt, target_min=0, target_max=255, target_type=np.uint8)
+                mask_gt = mask_gt.detach().cpu().numpy().astype(np.uint8)
 
                 mask_pred = torch.clone(prediction).squeeze()
-                mask_pred = mask_pred.detach().cpu().numpy()
-                mask_pred = normalize_image(image=mask_pred, target_min=0, target_max=255, target_type=np.uint8)
-                mask_pred = 255*(mask_pred > 127).astype(np.uint8)
+                mask_pred = (mask_pred > 0.5).detach().cpu().numpy().astype(np.uint8)
+
+                prob_map = torch.clone(prediction).squeeze()
+                prob_map = (prob_map * 255).detach().cpu().numpy().astype(np.uint8)
 
                 logging_images.append(wandb.Image(image_bg,
-                                                  masks={'probability map': {'mask_data': prob_map, 'class_labels': self.labels()},
-                                                         'prediction': {'mask_data': mask_pred, 'class_labels': self.labels()},
+                                                  masks={'prediction': {'mask_data': mask_pred, 'class_labels': self.labels()},
                                                          'ground truth': {'mask_data': mask_gt, 'class_labels': self.labels()},
                                                          },
                                                   caption='Image {:d}'.format(idx+1)))
-
+                logging_images.append(wandb.Image(prob_map, caption='Prob Map {:d}'.format(idx+1)))
             wandb.log({'Segmentation comparison': logging_images})
-
-
-        # TODO: Delete the following code
-                # wandb.log({'preds_' + 'temp_name': logging_images})
-
-                # logging_images.append(
-                #     wandb.Image(image_log,
-                #                 masks={"prediction": {"mask_data": mask_pred_log, "class_labels": "COVID-19"},
-                #                        "ground truth": {"mask_data": mask_gt_log, "class_labels": "COVID-19"}},
-                #                 caption="Test name 1"))
-                # wandb.log({'preds_' + 'temp_name': logging_images})
-
-        # mean = self.log_imgs_ds['train'].dataset.transform_params['mean']
-        # std = self.log_imgs_ds['train'].dataset.transform_params['std']
-        #
-        # for data_subset in self.log_imgs_ds:
-        #     original_image, ground_truth_mask = next(iter(self.log_imgs_ds[data_subset]))
-        #     prediction_mask = model(original_image)
-        #     logging_imgs = []
-        #
-        #     for img_num in range(2):
-        #         img = (original_image[img_num, :, :, :].permute(1, 2, 0).numpy())
-        #         processed_img = (((img * std) + mean) * 255).astype(np.uint8)
-        #         pred_mask = (prediction_mask[img_num, 0, :, :].detach().numpy() > 0.5)
-        #         gt_mask = ground_truth_mask[img_num, 0, :, :].detach().numpy()
-        #
-        #         logging_imgs.append(
-        #             wandb.Image(processed_img, masks={
-        #                 "predictions": {
-        #                     "mask_data": pred_mask,
-        #                     "class_labels": self.covid_segm_classes
-        #                 },
-        #                 "ground_truth": {
-        #                     "mask_data": gt_mask,
-        #                     "class_labels": self.covid_segm_classes
-        #                 }
-        #             })
-        #         )
-        #     wandb.log({'preds_' + data_subset: logging_imgs})
 
     # TODO: changes are needed for multiple classes
     def labels(self):
-        l = {}
-        for i, label in enumerate([self.class_name]):
-            l[i] = label
+        l = {0: 'Normal'}
+        for i, label in enumerate([self.class_name], 1):
+            l[1] = label
         return l
-
-    # TODO: Delete
-    # def log_wandb(self, model, train_logs, val_logs, test_logs):
-    #     if self.wandb_api_key is None:
-    #         return 0
-    #
-    #     self._log_images(model)
-    #     self._log_metrics(train_logs, val_logs, test_logs)
 
     def print_model_settings(self) -> None:
         print('\033[1m\033[4m\033[93m' + '\nModel settings:' + '\033[0m')
@@ -267,8 +220,10 @@ class SegmentationModel:
         test_epoch = smp.utils.train.ValidEpoch(model, loss=loss, metrics=metrics, stage_name='test',  device=self.device)
 
         # Initialize W&B
-        os.environ['WANDB_API_KEY'] = self.wandb_api_key
-        wandb.init(project=self.wandb_project_name, entity='big_data_lab', name=self.run_name)
+        if not (self.wandb_api_key is None):
+
+            os.environ['WANDB_API_KEY'] = self.wandb_api_key
+            wandb.init(project=self.wandb_project_name, entity='big_data_lab', name=self.run_name)
 
         max_score = 0
         for epoch in range(0, self.epochs):
