@@ -6,12 +6,12 @@ import segmentation_models_pytorch as smp
 
 from tools.models import SegmentationModel
 from tools.datasets import SegmentationDataset
-from tools.data_processing_tools import split_data
+from tools.data_processing_tools import split_data, covid_segmentation_labels
 from tools.supervisely_tools import read_supervisely_project
 
 
 def main(dataset_dir, model_name, encoder_name, encoder_weights, batch_size, epochs, class_name,
-         input_size, excluded_datasets, included_datasets, wandb_project_name, wandb_api_key):
+         input_size, excluded_datasets, included_datasets, lr, monitor_metric, wandb_project_name, wandb_api_key):
 
     img_paths, ann_paths, dataset_names = read_supervisely_project(sly_project_dir=dataset_dir,
                                                                    included_datasets=included_datasets,
@@ -61,11 +61,13 @@ def main(dataset_dir, model_name, encoder_name, encoder_weights, batch_size, epo
                               batch_size=batch_size,
                               epochs=epochs,
                               class_name=class_name,
+                              lr=lr,
                               input_size=input_size,
                               save_dir='models',
+                              logging_labels=covid_segmentation_labels([class_name]),
                               wandb_project_name=wandb_project_name,
                               wandb_api_key=wandb_api_key)
-    model.train(train_loader, val_loader, test_loader, logging_loader)
+    model.train(train_loader, val_loader, test_loader, monitor_metric, logging_loader)
 
 
 if __name__ == '__main__':
@@ -79,7 +81,7 @@ if __name__ == '__main__':
     parser.add_argument('--encoder_weights', default='imagenet', type=str, help='imagenet, ssl or swsl')
     parser.add_argument('--batch_size', default=8, type=int)
     parser.add_argument('--lr', default=0.0001, type=float)                 # TODO (David): add usage of LR in the code
-    parser.add_argument('--epochs', default=5, type=int)
+    parser.add_argument('--epochs', default=2, type=int)
     parser.add_argument('--monitor_metric', default='iou_score', type=str)  # TODO (David): add usage of monitor_metric in the code (W&B logging)
     parser.add_argument('--save_dir', default='models', type=str)
     parser.add_argument('--included_datasets', default=None, type=str)
@@ -89,5 +91,5 @@ if __name__ == '__main__':
     args = parser.parse_args()
     args.excluded_datasets = ['covid-chestxray-dataset', 'COVID-19-Radiography-Database', 'Figure1-COVID-chestxray-dataset']     # Used only for debugging
     main(args.dataset_dir, args.model_name, args.encoder_name, args.encoder_weights, args.batch_size,
-         args.epochs, args.class_name, args.input_size, args.excluded_datasets, args.included_datasets,
-         args.wandb_project_name, args.wandb_api_key)
+         args.epochs, args.class_name, args.input_size, args.excluded_datasets, args.included_datasets, args.lr,
+         args.monitor_metric, args.wandb_project_name, args.wandb_api_key)
