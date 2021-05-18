@@ -1,8 +1,9 @@
 import json
 from typing import List, Tuple, Dict, Union
+
+import wandb
 import numpy as np
 from sklearn.model_selection import train_test_split
-import wandb
 
 
 def normalize_image(image: np.ndarray,
@@ -77,8 +78,8 @@ def drop_empty_annotations(img_paths: List[str],
 
 def covid_segmentation_labels(class_names: List[str]) -> Dict[int, str]:
     l = {0: 'Normal'}
-    if 'Normal' in class_names: class_names.remove('Normal')
-
+    if 'Normal' in class_names:
+        class_names.remove('Normal')
     for i, label in enumerate(class_names, 1):
         l[i] = label
     return l

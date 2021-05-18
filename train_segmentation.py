@@ -6,12 +6,12 @@ import segmentation_models_pytorch as smp
 
 from tools.models import SegmentationModel
 from tools.datasets import SegmentationDataset
-from tools.data_processing_tools import split_data, covid_segmentation_labels
 from tools.supervisely_tools import read_supervisely_project
+from tools.data_processing_tools import split_data, covid_segmentation_labels
 
 
 def main(dataset_dir, model_name, encoder_name, encoder_weights, batch_size, epochs, class_name,
-         input_size, excluded_datasets, included_datasets, lr, monitor_metric, wandb_project_name, wandb_api_key):
+         input_size, save_dir, excluded_datasets, included_datasets, lr, monitor_metric, wandb_project_name, wandb_api_key):
 
     img_paths, ann_paths, dataset_names = read_supervisely_project(sly_project_dir=dataset_dir,
                                                                    included_datasets=included_datasets,
@@ -63,11 +63,12 @@ def main(dataset_dir, model_name, encoder_name, encoder_weights, batch_size, epo
                               class_name=class_name,
                               lr=lr,
                               input_size=input_size,
-                              save_dir='models',
+                              monitor_metric=monitor_metric,
+                              save_dir=save_dir,
                               logging_labels=covid_segmentation_labels([class_name]),
                               wandb_project_name=wandb_project_name,
                               wandb_api_key=wandb_api_key)
-    model.train(train_loader, val_loader, test_loader, monitor_metric, logging_loader)
+    model.train(train_loader, val_loader, test_loader, logging_loader)
 
 
 if __name__ == '__main__':
@@ -80,16 +81,28 @@ if __name__ == '__main__':
     parser.add_argument('--encoder_name', default='resnet18', type=str)
     parser.add_argument('--encoder_weights', default='imagenet', type=str, help='imagenet, ssl or swsl')
     parser.add_argument('--batch_size', default=8, type=int)
-    parser.add_argument('--lr', default=0.0001, type=float)                 # TODO (David): add usage of LR in the code
-    parser.add_argument('--epochs', default=2, type=int)
-    parser.add_argument('--monitor_metric', default='iou_score', type=str)  # TODO (David): add usage of monitor_metric in the code (W&B logging)
+    parser.add_argument('--lr', default=0.0001, type=float)
+    parser.add_argument('--epochs', default=5, type=int)
+    parser.add_argument('--monitor_metric', default='fscore', type=str)
     parser.add_argument('--save_dir', default='models', type=str)
     parser.add_argument('--included_datasets', default=None, type=str)
     parser.add_argument('--excluded_datasets', default=None, type=str)
-    parser.add_argument('--wandb_project_name', default='test_project', type=str)
+    parser.add_argument('--wandb_project_name', default='covid_segmentation', type=str)
     parser.add_argument('--wandb_api_key', default='b45cbe889f5dc79d1e9a0c54013e6ab8e8afb871', type=str)
     args = parser.parse_args()
     args.excluded_datasets = ['covid-chestxray-dataset', 'COVID-19-Radiography-Database', 'Figure1-COVID-chestxray-dataset']     # Used only for debugging
-    main(args.dataset_dir, args.model_name, args.encoder_name, args.encoder_weights, args.batch_size,
-         args.epochs, args.class_name, args.input_size, args.excluded_datasets, args.included_datasets, args.lr,
-         args.monitor_metric, args.wandb_project_name, args.wandb_api_key)
+    main(dataset_dir=args.dataset_dir,
+         model_name=args.model_name,
+         encoder_name=args.encoder_name,
+         encoder_weights=args.encoder_weights,
+         batch_size=args.batch_size,
+         epochs=args.epochs,
+         class_name=args.class_name,
+         input_size=args.input_size,
+         save_dir=args.save_dir,
+         included_datasets=args.included_datasets,
+         excluded_datasets=args.excluded_datasets,
+         lr=args.lr,
+         monitor_metric=args.monitor_metric,
+         wandb_project_name=args.wandb_project_name,
+         wandb_api_key=args.wandb_api_key)
