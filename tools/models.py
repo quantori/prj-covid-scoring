@@ -1,13 +1,14 @@
 import os
 from datetime import datetime
 from typing import List, Dict, Tuple, Any, Union
-
-import wandb
+import albumentations as A
+from torch.utils.data import DataLoader
 import torch
 import numpy as np
 from PIL import Image
-import albumentations as A
 import segmentation_models_pytorch as smp
+import wandb
+from tools.data_processing_tools import log_datasets_files
 
 
 # TODO: think of adding more augmentation transformations such as Cutout, Grid Mask, MixUp, CutMix, Cutout, Mosaic
@@ -32,6 +33,8 @@ class SegmentationModel:
                  classes: int = 1,
                  activation: str = 'sigmoid',
                  class_name: str = 'COVID-19',
+                 lr: float = 0.0001,
+                 logging_labels: Dict[int, str] = None,
                  augmentation_params: A.Compose = None,
                  save_dir: str = 'models',
                  wandb_api_key: str = 'b45cbe889f5dc79d1e9a0c54013e6ab8e8afb871',
@@ -42,6 +45,7 @@ class SegmentationModel:
         self.input_size = input_size
 
         # Model settings
+        self.lr = lr
         self.model_name = model_name
         self.encoder_name = encoder_name
         self.encoder_weights = encoder_weights
@@ -58,18 +62,36 @@ class SegmentationModel:
         os.makedirs(self.model_dir) if not os.path.exists(self.model_dir) else False
         self.print_model_settings()
 
+        # logging settings
+        self.logging_labels = logging_labels
         self.wandb_api_key = wandb_api_key
         self.wandb_project_name = wandb_project_name
 
     @staticmethod
-    def _get_log_metrics(train_logs, val_logs, test_logs) -> Dict[str, float]:
-        train_metrics = {'train/' + k: v for k, v in train_logs.items()}
-        val_metrics = {'val/' + k: v for k, v in val_logs.items()}
-        test_metrics = {'test/' + k: v for k, v in test_logs.items()}
+    def _get_log_metrics(train_logs, val_logs, test_logs, prefix='') -> Dict[str, float]:
+        train_metrics = {prefix + 'train/' + k: v for k, v in train_logs.items()}
+        val_metrics = {prefix + 'val/' + k: v for k, v in val_logs.items()}
+        test_metrics = {prefix + 'test/' + k: v for k, v in test_logs.items()}
         metrics = {}
         for m in [train_metrics, val_metrics, test_metrics]:
             metrics.update(m)
         return metrics
+
+    def get_hyperparameters(self):
+        hyperparameters = {
+            'lr': self.lr,
+            'model_name': self.model_name,
+            'encoder_name': self.encoder_name,
+            'encoder_weights': self.encoder_weights,
+            'batch_size': self.batch_size,
+            'epochs': self.epochs,
+            'in_channels': self.in_channels,
+            'classes': self.classes,
+            'activation': self.activation,
+            'class_name': self.class_name,
+            'device': self.device,
+        }
+        return hyperparameters
 
     def _get_log_images(self, model, logging_loader) -> Tuple[List[wandb.Image], List[wandb.Image]]:
 
@@ -98,19 +120,14 @@ class SegmentationModel:
                 prob_map = (prob_map * 255).detach().cpu().numpy().astype(np.uint8)
 
                 segmentation_masks.append(wandb.Image(image_bg,
-                                                 masks={'Prediction': {'mask_data': mask_pred, 'class_labels': self.labels()},
-                                                        'Ground truth': {'mask_data': mask_gt, 'class_labels': self.labels()},
-                                                        },
-                                                 caption='Mask {:d}'.format(idx+1)))
-                probability_maps.append(wandb.Image(prob_map, caption='Map {:d}'.format(idx+1)))
+                                                      masks={'Prediction': {'mask_data': mask_pred,
+                                                                            'class_labels': self.logging_labels},
+                                                             'Ground truth': {'mask_data': mask_gt,
+                                                                              'class_labels': self.logging_labels},
+                                                             },
+                                                      caption='Mask {:d}'.format(idx + 1)))
+                probability_maps.append(wandb.Image(prob_map, caption='Map {:d}'.format(idx + 1)))
         return segmentation_masks, probability_maps
-
-    # TODO: not obvious solution
-    def labels(self):
-        l = {0: 'Normal'}
-        for i, label in enumerate([self.class_name], 1):
-            l[1] = label
-        return l
 
     def print_model_settings(self) -> None:
         print('\033[1m\033[4m\033[93m' + '\nModel settings:' + '\033[0m')
@@ -118,7 +135,8 @@ class SegmentationModel:
         print('\033[92m' + 'Model name:     {:s}'.format(self.model_name) + '\033[0m')
         print('\033[92m' + 'Encoder name:   {:s}'.format(self.encoder_name) + '\033[0m')
         print('\033[92m' + 'Weights used:   {:s}'.format(self.encoder_weights) + '\033[0m')
-        print('\033[92m' + 'Input size:     {:d}x{:d}x{:d}'.format(self.input_size[0], self.input_size[1], self.in_channels) + '\033[0m')
+        print('\033[92m' + 'Input size:     {:d}x{:d}x{:d}'.format(self.input_size[0], self.input_size[1],
+                                                                   self.in_channels) + '\033[0m')
         print('\033[92m' + 'Class count:    {:d}'.format(self.classes) + '\033[0m')
         print('\033[92m' + 'Activation:     {:s}'.format(self.activation) + '\033[0m\n')
 
@@ -197,7 +215,7 @@ class SegmentationModel:
 
         return model
 
-    def train(self, train_loader, val_loader, test_loader, logging_loader=None):
+    def train(self, train_loader, val_loader, test_loader, monitor_metric, logging_loader=None):
         # Create segmentation model
         model = self._get_model()
         loss = smp.utils.losses.DiceLoss()  # DiceLoss, JaccardLoss, BCEWithLogitsLoss, BCELoss
@@ -206,19 +224,27 @@ class SegmentationModel:
                    smp.utils.metrics.Accuracy(threshold=0.5),
                    smp.utils.metrics.Precision(threshold=0.5),
                    smp.utils.metrics.Recall(threshold=0.5)]
-        optimizer = torch.optim.Adam([dict(params=model.parameters(), lr=0.0001)])
-        train_epoch = smp.utils.train.TrainEpoch(model, loss=loss, metrics=metrics, optimizer=optimizer, device=self.device)
-        valid_epoch = smp.utils.train.ValidEpoch(model, loss=loss, metrics=metrics, stage_name='valid', device=self.device)
-        test_epoch = smp.utils.train.ValidEpoch(model, loss=loss, metrics=metrics, stage_name='test',  device=self.device)
+
+        optimizer = torch.optim.Adam([dict(params=model.parameters(), lr=self.lr)])
+        train_epoch = smp.utils.train.TrainEpoch(model, loss=loss, metrics=metrics, optimizer=optimizer,
+                                                 device=self.device)
+        valid_epoch = smp.utils.train.ValidEpoch(model, loss=loss, metrics=metrics, stage_name='valid',
+                                                 device=self.device)
+        test_epoch = smp.utils.train.ValidEpoch(model, loss=loss, metrics=metrics, stage_name='test',
+                                                device=self.device)
 
         # Initialize W&B
         if not (self.wandb_api_key is None):
+            hyperparameters = self.get_hyperparameters()
             os.environ['WANDB_API_KEY'] = self.wandb_api_key
-            wandb.init(project=self.wandb_project_name, entity='big_data_lab', name=self.run_name)
+            run = wandb.init(project=self.wandb_project_name, entity='big_data_lab', name=self.run_name,
+                             config=hyperparameters)
+            log_datasets_files(run, [train_loader, val_loader, test_loader], artefact_name='train_val_test')
+
         # wandb.watch(model, log='all', log_freq=10)
 
-        # TODO (David): log hyperparameters of the model and dataset
         max_score = 0
+        best_epoch = {'best_metrics_val': None, 'best/best_epoch_val': {'best_epoch_val': 0}}
         for epoch in range(0, self.epochs):
             print('\nEpoch: {:d}'.format(epoch))
 
@@ -226,25 +252,23 @@ class SegmentationModel:
             val_logs = valid_epoch.run(val_loader)
             test_logs = test_epoch.run(test_loader)
 
-            if max_score < val_logs['iou_score']:       # TODO (David): Change iou_score to monitor_metric
-                max_score = val_logs['iou_score']
+            if max_score < val_logs[monitor_metric]:
+                max_score = val_logs[monitor_metric]
+                best_epoch['best/best_epoch_val']['best_epoch_val'] = epoch
+                best_epoch['best_metrics_val'] = self._get_log_metrics(train_logs, val_logs, test_logs, prefix='best/')
+
                 best_weights_path = os.path.join(self.model_dir, 'best_weights.pth')
                 torch.save(model, best_weights_path)
                 print('Best weights are saved to {:s}'.format(best_weights_path))
 
             metrics = self._get_log_metrics(train_logs, val_logs, test_logs)
             masks, maps = self._get_log_images(model, logging_loader)
-            # TODO (David): get log_best_metrics and log_best_epoch
-
             wandb.log(data=metrics, commit=False)
             wandb.log(data={'Segmentation masks': masks, 'Probability maps': maps})
-
-            # TODO (David): read about commit=False and step in wandb.log
-            # TODO (David): log best metrics using a best/metric_name template
-            # wandb.login(data=best_metrics)
-            # wandb.login(data=best_epoch)
-            # TODO (David): log best epoch
 
             if epoch == 25:
                 optimizer.param_groups[0]['lr'] = 1e-5
                 print('Decrease decoder learning rate to {:f}'.format(optimizer.param_groups[0]['lr']))
+
+        wandb.log(data=best_epoch['best_metrics_val'])
+        wandb.log(data=best_epoch['best/best_epoch_val'])

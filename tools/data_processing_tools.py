@@ -1,8 +1,8 @@
 import json
 from typing import List, Tuple, Dict, Union
-
 import numpy as np
 from sklearn.model_selection import train_test_split
+import wandb
 
 
 def normalize_image(image: np.ndarray,
@@ -21,7 +21,6 @@ def split_data(img_paths: List[str],
                class_name: str,
                seed: int = 11,
                ratio: List[float] = (0.8, 0.1, 0.1)) -> Dict:
-
     assert sum(ratio) <= 1, 'The sum of ratio values should not be greater than 1'
     output = {'train': Tuple[List[str], List[str]],
               'val': Tuple[List[str], List[str]],
@@ -42,7 +41,8 @@ def split_data(img_paths: List[str],
                                                             ann_paths=ann_paths_ds,
                                                             class_name=class_name)
 
-        x_train, x_test, y_train, y_test = train_test_split(img_paths_ds, ann_paths_ds, test_size=ratio[2], random_state=seed)
+        x_train, x_test, y_train, y_test = train_test_split(img_paths_ds, ann_paths_ds, test_size=ratio[2],
+                                                            random_state=seed)
         x_train, x_val, y_train, y_val = train_test_split(x_train, y_train, train_size=train_ratio, random_state=seed)
 
         img_paths_train.extend(x_train)
@@ -73,3 +73,23 @@ def drop_empty_annotations(img_paths: List[str],
                 ann_paths_cleaned.append(ann_path)
                 break
     return img_paths_cleaned, ann_paths_cleaned
+
+
+def covid_segmentation_labels(class_names: List[str]) -> Dict[int, str]:
+    l = {0: 'Normal'}
+    if 'Normal' in class_names: class_names.remove('Normal')
+
+    for i, label in enumerate(class_names, 1):
+        l[i] = label
+    return l
+
+
+def log_datasets_files(run, datasets_list, artefact_name='train_val_test'):
+    artifact = wandb.Artifact(artefact_name, type='dataset')
+
+    for dataloader in datasets_list:
+        img_paths, ann_paths = dataloader.dataset.img_paths, dataloader.dataset.ann_paths
+        for img, ann in zip(img_paths, ann_paths):
+            artifact.add_file(img)
+            artifact.add_file(ann)
+    run.log_artifact(artifact)
