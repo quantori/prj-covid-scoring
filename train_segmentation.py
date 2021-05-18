@@ -78,16 +78,16 @@ if __name__ == '__main__':
     parser.add_argument('--encoder_name', default='resnet18', type=str)
     parser.add_argument('--encoder_weights', default='imagenet', type=str, help='imagenet, ssl or swsl')
     parser.add_argument('--batch_size', default=8, type=int)
-    parser.add_argument('--lr', default=0.0001, type=float)                 # TODO: add usage of LR in the code
+    parser.add_argument('--lr', default=0.0001, type=float)                 # TODO (David): add usage of LR in the code
     parser.add_argument('--epochs', default=5, type=int)
-    parser.add_argument('--monitor_metric', default='iou_score', type=str)  # TODO: add usage of monitor_metric in the code
+    parser.add_argument('--monitor_metric', default='iou_score', type=str)  # TODO (David): add usage of monitor_metric in the code (W&B logging)
     parser.add_argument('--save_dir', default='models', type=str)
     parser.add_argument('--included_datasets', default=None, type=str)
     parser.add_argument('--excluded_datasets', default=None, type=str)
     parser.add_argument('--wandb_project_name', default='test_project', type=str)
     parser.add_argument('--wandb_api_key', default='b45cbe889f5dc79d1e9a0c54013e6ab8e8afb871', type=str)
     args = parser.parse_args()
-    # args.excluded_datasets = ['covid-chestxray-dataset', 'COVID-19-Radiography-Database']     # Used only for debugging
+    args.excluded_datasets = ['covid-chestxray-dataset', 'COVID-19-Radiography-Database', 'Figure1-COVID-chestxray-dataset']     # Used only for debugging
     main(args.dataset_dir, args.model_name, args.encoder_name, args.encoder_weights, args.batch_size,
          args.epochs, args.class_name, args.input_size, args.excluded_datasets, args.included_datasets,
          args.wandb_project_name, args.wandb_api_key)

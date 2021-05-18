@@ -1,10 +1,11 @@
 import os
 from datetime import datetime
-from typing import List, Any, Union
+from typing import List, Dict, Tuple, Any, Union
 
 import wandb
 import torch
 import numpy as np
+from PIL import Image
 import albumentations as A
 import segmentation_models_pytorch as smp
 
@@ -61,21 +62,23 @@ class SegmentationModel:
         self.wandb_project_name = wandb_project_name
 
     @staticmethod
-    def _log_metrics(train_logs, val_logs, test_logs) -> None:
-        for key in train_logs:
-            wandb.log({'train/{:s}'.format(key): train_logs[key]})
-            wandb.log({'val/{:s}'.format(key): val_logs[key]})
-            wandb.log({'test/{:s}'.format(key): test_logs[key]})
+    def _get_log_metrics(train_logs, val_logs, test_logs) -> Dict[str, float]:
+        train_metrics = {'train/' + k: v for k, v in train_logs.items()}
+        val_metrics = {'val/' + k: v for k, v in val_logs.items()}
+        test_metrics = {'test/' + k: v for k, v in test_logs.items()}
+        metrics = {}
+        for m in [train_metrics, val_metrics, test_metrics]:
+            metrics.update(m)
+        return metrics
 
-    def _log_images(self, model, logging_loader) -> Union[int, None]:
-        if logging_loader is None:
-            return 0
+    def _get_log_images(self, model, logging_loader) -> Tuple[List[wandb.Image], List[wandb.Image]]:
+
         mean = torch.tensor(logging_loader.dataset.transform_params['mean'])
         std = torch.tensor(logging_loader.dataset.transform_params['std'])
 
         with torch.no_grad():
             segmentation_masks = []
-            segmentation_maps = []
+            probability_maps = []
             for idx, (image, mask) in enumerate(logging_loader):
                 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
                 image, mask = image.to(device), mask.to(device)
@@ -99,9 +102,8 @@ class SegmentationModel:
                                                         'Ground truth': {'mask_data': mask_gt, 'class_labels': self.labels()},
                                                         },
                                                  caption='Mask {:d}'.format(idx+1)))
-                segmentation_maps.append(wandb.Image(prob_map, caption='Map {:d}'.format(idx+1)))
-            wandb.log({'Segmentation masks': segmentation_masks})
-            wandb.log({'Probability maps': segmentation_maps})
+                probability_maps.append(wandb.Image(prob_map, caption='Map {:d}'.format(idx+1)))
+        return segmentation_masks, probability_maps
 
     # TODO: not obvious solution
     def labels(self):
@@ -215,8 +217,7 @@ class SegmentationModel:
             wandb.init(project=self.wandb_project_name, entity='big_data_lab', name=self.run_name)
         # wandb.watch(model, log='all', log_freq=10)
 
-        # TODO: log hyperparameters of the model and dataset
-
+        # TODO (David): log hyperparameters of the model and dataset
         max_score = 0
         for epoch in range(0, self.epochs):
             print('\nEpoch: {:d}'.format(epoch))
@@ -225,16 +226,24 @@ class SegmentationModel:
             val_logs = valid_epoch.run(val_loader)
             test_logs = test_epoch.run(test_loader)
 
-            self._log_images(model, logging_loader)
-            self._log_metrics(train_logs, val_logs, test_logs)
-            # TODO: log best metrics
-            # TODO: log best epoch
-
-            if max_score < val_logs['iou_score']:
+            if max_score < val_logs['iou_score']:       # TODO (David): Change iou_score to monitor_metric
                 max_score = val_logs['iou_score']
                 best_weights_path = os.path.join(self.model_dir, 'best_weights.pth')
                 torch.save(model, best_weights_path)
                 print('Best weights are saved to {:s}'.format(best_weights_path))
+
+            metrics = self._get_log_metrics(train_logs, val_logs, test_logs)
+            masks, maps = self._get_log_images(model, logging_loader)
+            # TODO (David): get log_best_metrics and log_best_epoch
+
+            wandb.log(data=metrics, commit=False)
+            wandb.log(data={'Segmentation masks': masks, 'Probability maps': maps})
+
+            # TODO (David): read about commit=False and step in wandb.log
+            # TODO (David): log best metrics using a best/metric_name template
+            # wandb.login(data=best_metrics)
+            # wandb.login(data=best_epoch)
+            # TODO (David): log best epoch
 
             if epoch == 25:
                 optimizer.param_groups[0]['lr'] = 1e-5
