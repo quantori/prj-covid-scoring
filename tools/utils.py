@@ -58,7 +58,8 @@ def compute_regr_scoring_metrics(num_classes):
 
 
 def compute_clf_scoring_metrics(y_pred, y_true, metric_collection):
-    softmaxed_y_pred = F.softmax(y_pred.detach(), dim=1)
+    y_pred = y_pred.detach()
+    softmaxed_y_pred = F.softmax(y_pred, dim=1)
     metric_collection(softmaxed_y_pred, y_true)
     return metric_collection
 

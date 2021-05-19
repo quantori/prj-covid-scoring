@@ -40,11 +40,17 @@ class ScoringModel:
     def get_pretrained_base(self, pretrained_name, requires_grad=False):
         available_models = ['densenet121']
         assert pretrained_name in available_models, 'desired model isn\'t implemented'.format(pretrained_name)
+
         if pretrained_name == 'densenet121':
             model = models.densenet121(pretrained=True)
             set_parameter_requires_grad(model, requires_grad)
             base_model = nn.Sequential(*list(model.children())[:-1], nn.AdaptiveAvgPool2d((1, 1)), nn.Flatten())
             return base_model
+
+    def compute_metrics(self, metrics_collection, prefix):
+        transformed_metrics = {prefix + name: value for name, value in metrics_collection.compute().items()}
+        metrics_collection.reset()
+        return transformed_metrics
 
     def get_model_attributes(self):
         #TODO:implement regression
@@ -52,7 +58,7 @@ class ScoringModel:
         if self.model_type == 'classification':
             model = nn.Sequential(pretrained_base, nn.Dropout(p=self.dropout), nn.Linear(1024, self.num_classes))
             criterion = nn.CrossEntropyLoss()
-            metrics_collection = MetricCollection([
+            train_metrics = MetricCollection([
                 CrossEntropyMetric(),
                 Accuracy(),
                 Precision(num_classes=self.num_classes, average='micro'),
@@ -63,7 +69,7 @@ class ScoringModel:
         if self.model_type == 'regression':
             model = nn.Sequential(pretrained_base, nn.Dropout(p=self.dropout), nn.Linear(1024, 1), Flatten())
             criterion = mse_sigmoid_loss(self.num_classes)
-            metrics_collection = MetricCollection([
+            train_metrics = MetricCollection([
                 CrossMSEMetric(self.num_classes),
                 Accuracy(),
                 Precision(num_classes=self.num_classes, average='micro'),
@@ -72,7 +78,10 @@ class ScoringModel:
             metrics_fun = compute_regr_scoring_metrics(num_classes=self.num_classes)
 
         optimizer = optim.SGD(model.parameters(), lr=self.lr, momentum=0.9)
-        return model, criterion, metrics_collection, metrics_fun, optimizer
+        valid_metrics = copy.deepcopy(train_metrics)
+        test_metrics = copy.deepcopy(train_metrics)
+
+        return model, criterion, train_metrics, valid_metrics, test_metrics, metrics_fun, optimizer
 
     @staticmethod
     def train_epoch(model, train_data, criterion, optimizer, device, metrics_collection=None, metrics_fun=None):
@@ -86,8 +95,8 @@ class ScoringModel:
             inputs, labels = inputs.to(device), labels.to(device)
             optimizer.zero_grad()
             outputs = model(inputs)
-            metrics_collection = metrics_fun(outputs, labels, metrics_collection)
 
+            metrics_collection = metrics_fun(outputs, labels, metrics_collection)
             loss = criterion(outputs, labels)
             loss.backward()
             optimizer.step()
@@ -109,12 +118,9 @@ class ScoringModel:
                 metrics_collection = metrics_fun(outputs, labels, metrics_collection)
         return metrics_collection
 
-    def train_scoring_model(self, train_data, validation_data, epochs, output_model_path):
-
+    def train(self, train_data, valid_data, test_data, epochs, output_model_path):
         #TODO:save dataset and also models to wandb
-        model, criterion, metrics_collection, metrics_fun, optimizer = self.get_model_attributes()
-        train_metrics = []
-        validation_metrics = []
+        model, criterion, train_metrics, valid_metrics, test_metrics, metrics_fun, optimizer = self.get_model_attributes()
         best_model_wts = copy.deepcopy(model.state_dict())
         best_val_accuracy = 0
 
@@ -123,27 +129,26 @@ class ScoringModel:
             wandb_run = wandb.init(project=self.model_type, entity='big_data_lab', name=self.run_name)
 
         for epoch in tqdm(range(epochs)):
-            metrics_collection = ScoringModel.train_epoch(model, train_data, criterion, optimizer, self.device,
-                                                          metrics_collection, metrics_fun)
-            train_metrics.append({'train/' + name: value for name, value in metrics_collection.compute().items()})
-            metrics_collection.reset()
-            metrics_collection = ScoringModel.test_epoch(model, validation_data, self.device, metrics_collection, metrics_fun)
+            train_metrics = ScoringModel.train_epoch(model, train_data, criterion, optimizer, self.device,
+                                                          train_metrics, metrics_fun)
+            valid_metrics = ScoringModel.test_epoch(model, valid_data, self.device, valid_metrics, metrics_fun)
+            test_metrics = ScoringModel.test_epoch(model, test_data, self.device, test_metrics, metrics_fun)
 
-            validation_metrics.append({'validation/' + name: value for name, value in metrics_collection.compute().items()})
-            metrics_collection.reset()
+            train_logs = self.compute_metrics(train_metrics, 'train/')
+            valid_logs = self.compute_metrics(valid_metrics, 'valid/')
+            test_logs = self.compute_metrics(test_metrics, 'test/')
 
-            if validation_metrics[-1]['validation/Accuracy'] > best_val_accuracy:
-                best_val_accuracy = validation_metrics[-1]['validation/Accuracy']
+            wandb.log(train_logs, commit=False)
+            wandb.log(valid_logs, commit=False)
+            wandb.log(test_logs, commit=False)
+            wandb.log({'epoch': epoch})
+            if valid_logs['valid/Accuracy'] > best_val_accuracy:
+                best_val_accuracy = valid_logs['valid/Accuracy']
                 best_model_wts = copy.deepcopy(model.state_dict())
 
+        #TODO: add saving to wandb
         torch.save({
             'total_epochs': epochs,
             'model_state_dict': best_model_wts,
             'optimizer_state_dict': optimizer.state_dict(),
         }, output_model_path)
-
-        #TODO:change logging of dataset, also debug it, fix, x axis
-        for train_metric, validation_metric in zip(train_metrics, validation_metrics):
-            wandb.log(train_metric)
-            wandb.log(validation_metric)
-        return train_metrics, validation_metrics
