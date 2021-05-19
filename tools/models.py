@@ -69,7 +69,7 @@ class SegmentationModel:
         self.wandb_api_key = wandb_api_key
         self.wandb_project_name = wandb_project_name
 
-    def get_hyperparameters(self):
+    def get_hyperparameters(self) -> Dict[str, Any]:
         hyperparameters = {
             'model_name': self.model_name,
             'encoder_name': self.encoder_name,
@@ -89,7 +89,10 @@ class SegmentationModel:
         return hyperparameters
 
     @staticmethod
-    def _get_log_metrics(train_logs, val_logs, test_logs, prefix='') -> Dict[str, float]:
+    def _get_log_metrics(train_logs: Dict[str, float],
+                         val_logs: Dict[str, float],
+                         test_logs: Dict[str, float],
+                         prefix: str = '') -> Dict[str, float]:
         train_metrics = {prefix + 'train/' + k: v for k, v in train_logs.items()}
         val_metrics = {prefix + 'val/' + k: v for k, v in val_logs.items()}
         test_metrics = {prefix + 'test/' + k: v for k, v in test_logs.items()}
@@ -98,7 +101,9 @@ class SegmentationModel:
             metrics.update(m)
         return metrics
 
-    def _get_log_images(self, model, logging_loader) -> Tuple[List[wandb.Image], List[wandb.Image]]:
+    def _get_log_images(self,
+                        model: Any,
+                        logging_loader: torch.utils.data.dataloader.DataLoader) -> Tuple[List[wandb.Image], List[wandb.Image]]:
 
         mean = torch.tensor(logging_loader.dataset.transform_params['mean'])
         std = torch.tensor(logging_loader.dataset.transform_params['std'])
@@ -146,6 +151,8 @@ class SegmentationModel:
         print('\033[92m' + 'Input size:       {:d}x{:d}x{:d}'.format(self.input_size[0],
                                                                      self.input_size[1],
                                                                      self.in_channels) + '\033[0m')
+        print('\033[92m' + 'Batch size:       {:d}'.format(self.batch_size) + '\033[0m')
+        print('\033[92m' + 'Learning rate:    {:.4f}'.format(self.lr) + '\033[0m')
         print('\033[92m' + 'Class count:      {:d}'.format(self.classes) + '\033[0m')
         print('\033[92m' + 'Activation:       {:s}'.format(self.activation) + '\033[0m')
         print('\033[92m' + 'Monitor metric:   {:s}'.format(self.monitor_metric) + '\033[0m\n')
@@ -225,9 +232,35 @@ class SegmentationModel:
 
         return model
 
-    def train(self, train_loader, val_loader, test_loader, logging_loader=None):
+    def find_lr(self,
+                model: Any,
+                optimizer: Any,
+                criterion: Any,
+                train_loader: torch.utils.data.dataloader.DataLoader,
+                val_loader: torch.utils.data.dataloader.DataLoader):
+        import pandas as pd
+        from torch_lr_finder import LRFinder
+        lr_finder = LRFinder(model, optimizer, criterion, device='cuda')
+        lr_finder.range_test(train_loader=train_loader, val_loader=val_loader, end_lr=1, num_iter=100, step_mode="exp")
+        lr_finder.plot(skip_start=0, skip_end=0, log_lr=True, suggest_lr=True)
+        history = lr_finder.history
+        df = pd.DataFrame.from_dict(history)
+        df.to_excel(os.path.join(self.model_dir, 'lr_finder.xlsx'))
+        lr_finder.reset()
+
+    def train(self,
+              train_loader: torch.utils.data.dataloader.DataLoader,
+              val_loader: torch.utils.data.dataloader.DataLoader,
+              test_loader: torch.utils.data.dataloader.DataLoader,
+              logging_loader: torch.utils.data.dataloader.DataLoader = None) -> None:
 
         model = self.get_model()
+        # Used for viewing the model architecture. It doesn't work for all solutions
+        # torch.onnx.export(model,
+        #                   torch.randn(self.batch_size, self.in_channels, self.input_size[0], self.input_size[1], requires_grad=True),
+        #                   os.path.join(self.model_dir, 'model.onnx'),
+        #                   verbose=True)
+
         loss = smp.utils.losses.DiceLoss()  # DiceLoss, JaccardLoss, BCEWithLogitsLoss, BCELoss
         metrics = [smp.utils.metrics.Fscore(threshold=0.5),
                    smp.utils.metrics.IoU(threshold=0.5),
@@ -235,7 +268,13 @@ class SegmentationModel:
                    smp.utils.metrics.Precision(threshold=0.5),
                    smp.utils.metrics.Recall(threshold=0.5)]
 
-        optimizer = torch.optim.Adam([dict(params=model.parameters(), lr=self.lr)])
+        optimizer = torch.optim.SGD(params=model.parameters(), lr=self.lr)
+        # Use self.find_lr once in order to find LR boundaries
+        # self.find_lr(model=model, optimizer=optimizer, criterion=loss, train_loader=train_loader, val_loader=val_loader)
+        # For the training based on CLR, optimizer must support momentum with `cycle_momentum` option enabled
+        # LR overview: https://www.kaggle.com/isbhargav/guide-to-pytorch-learning-rate-scheduling
+        scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, base_lr=self.lr, max_lr=1, step_size_up=10,
+                                                      mode="exp_range", gamma=0.90)
         train_epoch = smp.utils.train.TrainEpoch(model, loss=loss, metrics=metrics, optimizer=optimizer,
                                                  device=self.device)
         valid_epoch = smp.utils.train.ValidEpoch(model, loss=loss, metrics=metrics, stage_name='valid',
@@ -249,13 +288,13 @@ class SegmentationModel:
             os.environ['WANDB_API_KEY'] = self.wandb_api_key
             run = wandb.init(project=self.wandb_project_name, entity='big_data_lab', name=self.run_name,
                              config=hyperparameters, tags=[self.model_name, self.encoder_name, self.encoder_weights])
-            log_datasets_files(run, [train_loader, val_loader, test_loader], artefact_name='train_val_test')
+            log_datasets_files(run, [train_loader, val_loader, test_loader], artefact_name=self.class_name)
 
         best_train_score = 0
         best_val_score = 0
         best_test_score = 0
         for epoch in range(0, self.epochs):
-            print('\nEpoch: {:d}'.format(epoch))
+            print('\nEpoch: {:03d}, LR: {:.5f}'.format(epoch, optimizer.param_groups[0]['lr']))
 
             train_logs = train_epoch.run(train_loader)
             val_logs = valid_epoch.run(val_loader)
@@ -278,10 +317,8 @@ class SegmentationModel:
 
             metrics = self._get_log_metrics(train_logs, val_logs, test_logs)
             masks, maps = self._get_log_images(model, logging_loader)
+            wandb.log(data={'Learning rate': optimizer.param_groups[0]['lr']}, commit=False)
             wandb.log(data=metrics, commit=False)
             wandb.log(data={'Segmentation masks': masks, 'Probability maps': maps})
 
-            # TODO: Add CLR
-            if epoch == 25:
-                optimizer.param_groups[0]['lr'] = 1e-5
-                print('Decrease decoder learning rate to {:f}'.format(optimizer.param_groups[0]['lr']))
+            scheduler.step()
