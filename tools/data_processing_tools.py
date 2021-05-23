@@ -38,6 +38,7 @@ def split_data(img_paths: List[str],
         img_paths_ds = list(filter(lambda path: dataset_name in path, img_paths))
         ann_paths_ds = list(filter(lambda path: dataset_name in path, ann_paths))
 
+        # TODO: include normal images as well
         img_paths_ds, ann_paths_ds = drop_empty_annotations(img_paths=img_paths_ds,
                                                             ann_paths=ann_paths_ds,
                                                             class_name=class_name)
@@ -85,12 +86,26 @@ def covid_segmentation_labels(class_names: List[str]) -> Dict[int, str]:
     return l
 
 
-def log_datasets_files(run, datasets_list, artefact_name='train_val_test'):
+def log_datasets_files(run, datasets_list, artefact_name):
     artifact = wandb.Artifact(artefact_name, type='dataset')
-
     for dataloader in datasets_list:
         img_paths, ann_paths = dataloader.dataset.img_paths, dataloader.dataset.ann_paths
         for img, ann in zip(img_paths, ann_paths):
             artifact.add_file(img)
             artifact.add_file(ann)
     run.log_artifact(artifact)
+
+
+def convert_seconds_to_hms(sec: Union[float, int]) -> str:
+    """Function that converts time period in seconds into %h:%m:%s expression.
+    Args:
+        sec (float): time period in seconds
+    Returns:
+        output (string): formatted time period
+    """
+    sec = int(sec)
+    h = sec // 3600
+    m = sec % 3600 // 60
+    s = sec % 3600 % 60
+    output = '{:02d}h:{:02d}m:{:02d}s'.format(h, m, s)
+    return output
