@@ -1,4 +1,4 @@
-from typing import List, Tuple
+from typing import List, Tuple, Union
 
 import cv2
 import numpy as np
@@ -15,13 +15,13 @@ class SegmentationDataset(Dataset):
     def __init__(self,
                  img_paths: List[str],
                  ann_paths: List[str],
-                 input_size: List[int] = (512, 512),
+                 input_size: Union[int, List[int]] = (512, 512),
                  class_name: str = 'COVID-19',
                  augmentation_params=None,
                  transform_params=None) -> None:
         self.img_paths, self.ann_paths = img_paths, ann_paths
         self.class_name = class_name
-        self.input_size = input_size
+        self.input_size = (input_size, input_size) if isinstance(input_size, int) else input_size
         self.augmentation_params = augmentation_params
         self.transform_params = transform_params
 
