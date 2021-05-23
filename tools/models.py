@@ -1,6 +1,6 @@
 import os
 from datetime import datetime
-from typing import List, Dict, Tuple, Any
+from typing import List, Dict, Tuple, Any, Union
 
 import wandb
 import torch
@@ -28,11 +28,13 @@ class SegmentationModel:
                  encoder_weights: str = 'imagenet',
                  batch_size: int = 4,
                  epochs: int = 30,
-                 input_size: List[int] = (512, 512),
+                 input_size: Union[int, List[int]] = (512, 512),
                  in_channels: int = 3,
                  classes: int = 1,
                  class_name: str = 'COVID-19',
                  activation: str = 'sigmoid',
+                 loss: str = 'Dice',
+                 optimizer: str = 'AdamW',
                  lr: float = 0.0001,
                  monitor_metric: str = 'fscore',
                  logging_labels: Dict[int, str] = None,
@@ -43,7 +45,7 @@ class SegmentationModel:
 
         # Dataset settings
         self.augmentation_params = augmentation_params
-        self.input_size = input_size
+        self.input_size = (input_size, input_size) if isinstance(input_size, int) else input_size
 
         # Model settings
         self.model_name = model_name
@@ -55,16 +57,15 @@ class SegmentationModel:
         self.classes = classes
         self.class_name = class_name
         self.activation = activation
+        self.loss = loss
+        self.optimizer = optimizer
         self.lr = lr
         self.monitor_metric = monitor_metric
-        self.device = self.device_selection()
         run_time = datetime.now().strftime("%d%m%y_%H%M")
         self.run_name = '{:s}_{:s}_{:s}_{:s}'.format(self.model_name, self.encoder_name, self.encoder_weights, run_time)
         self.model_dir = os.path.join(save_dir, self.run_name)
-        os.makedirs(self.model_dir) if not os.path.exists(self.model_dir) else False
-        self.print_model_settings()
 
-        # logging settings
+        # Logging settings
         self.logging_labels = logging_labels
         self.wandb_api_key = wandb_api_key
         self.wandb_project_name = wandb_project_name
@@ -82,6 +83,8 @@ class SegmentationModel:
             'classes': self.classes,
             'class_name': self.class_name,
             'activation': self.activation,
+            'loss': self.loss,
+            'optimizer': self.optimizer,
             'lr': self.lr,
             'monitor_metric': self.monitor_metric,
             'device': self.device,
@@ -152,6 +155,8 @@ class SegmentationModel:
                                                                      self.input_size[1],
                                                                      self.in_channels) + '\033[0m')
         print('\033[92m' + 'Batch size:       {:d}'.format(self.batch_size) + '\033[0m')
+        print('\033[92m' + 'Loss:             {:s}'.format(self.loss) + '\033[0m')
+        print('\033[92m' + 'Optimizer:        {:s}'.format(self.optimizer) + '\033[0m')
         print('\033[92m' + 'Learning rate:    {:.4f}'.format(self.lr) + '\033[0m')
         print('\033[92m' + 'Class count:      {:d}'.format(self.classes) + '\033[0m')
         print('\033[92m' + 'Activation:       {:s}'.format(self.activation) + '\033[0m')
@@ -248,11 +253,49 @@ class SegmentationModel:
         df.to_excel(os.path.join(self.model_dir, 'lr_finder.xlsx'))
         lr_finder.reset()
 
+    @staticmethod
+    def build_optimizer(model: Any,
+                        optimizer: str,
+                        lr: float) -> Any:
+        if optimizer == 'SGD':
+            optimizer = torch.optim.SGD(model.parameters(), lr)
+        elif optimizer == 'Adam':
+            optimizer = torch.optim.Adam(model.parameters(), lr, amsgrad=False)
+        elif optimizer == 'AdamW':
+            optimizer = torch.optim.AdamW(model.parameters(), lr, amsgrad=False)
+        elif optimizer == 'Adam_amsgrad':
+            optimizer = torch.optim.Adam(model.parameters(), lr, amsgrad=True)
+        elif optimizer == 'AdamW_amsgrad':
+            optimizer = torch.optim.AdamW(model.parameters(), lr, amsgrad=True)
+        elif optimizer == 'RMSprop':
+            optimizer = torch.optim.RMSprop(model.parameters(), lr)
+        else:
+            raise ValueError('Unknown optimizer: {}'.format(optimizer))
+        return optimizer
+
+    @staticmethod
+    def build_loss(loss: str) -> Any:
+        if loss == 'Dice':
+            loss = smp.utils.losses.DiceLoss()
+        elif loss == 'Jaccard':
+            loss = smp.utils.losses.JaccardLoss()
+        elif loss == 'BCE':
+            loss = smp.utils.losses.BCELoss()
+        elif loss == 'BCE_with_logits':
+            loss = smp.utils.losses.BCEWithLogitsLoss()
+        else:
+            raise ValueError('Unknown loss: {}'.format(loss))
+        return loss
+
     def train(self,
               train_loader: torch.utils.data.dataloader.DataLoader,
               val_loader: torch.utils.data.dataloader.DataLoader,
               test_loader: torch.utils.data.dataloader.DataLoader,
               logging_loader: torch.utils.data.dataloader.DataLoader = None) -> None:
+
+        self.device = self.device_selection()
+        self.print_model_settings()
+        os.makedirs(self.model_dir) if not os.path.exists(self.model_dir) else False
 
         model = self.get_model()
         # Used for viewing the model architecture. It doesn't work for all solutions
@@ -260,33 +303,32 @@ class SegmentationModel:
         #                   torch.randn(self.batch_size, self.in_channels, self.input_size[0], self.input_size[1], requires_grad=True),
         #                   os.path.join(self.model_dir, 'model.onnx'),
         #                   verbose=True)
+        optimizer = self.build_optimizer(model=model, optimizer=self.optimizer, lr=self.lr)
+        # Use self.find_lr once in order to find LR boundaries
+        # self.find_lr(model=model, optimizer=optimizer, criterion=loss, train_loader=train_loader, val_loader=val_loader)
+        # For the training based on CLR, optimizer must support momentum with `cycle_momentum` option enabled
+        # LR overview: https://www.kaggle.com/isbhargav/guide-to-pytorch-learning-rate-scheduling
 
-        loss = smp.utils.losses.DiceLoss()  # DiceLoss, JaccardLoss, BCEWithLogitsLoss, BCELoss
+        loss = self.build_loss(loss=self.loss)
         metrics = [smp.utils.metrics.Fscore(threshold=0.5),
                    smp.utils.metrics.IoU(threshold=0.5),
                    smp.utils.metrics.Accuracy(threshold=0.5),
                    smp.utils.metrics.Precision(threshold=0.5),
                    smp.utils.metrics.Recall(threshold=0.5)]
-
-        optimizer = torch.optim.SGD(params=model.parameters(), lr=self.lr)
-        # Use self.find_lr once in order to find LR boundaries
-        # self.find_lr(model=model, optimizer=optimizer, criterion=loss, train_loader=train_loader, val_loader=val_loader)
-        # For the training based on CLR, optimizer must support momentum with `cycle_momentum` option enabled
-        # LR overview: https://www.kaggle.com/isbhargav/guide-to-pytorch-learning-rate-scheduling
-        scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, base_lr=self.lr, max_lr=1, step_size_up=10,
-                                                      mode="exp_range", gamma=0.90)
-        train_epoch = smp.utils.train.TrainEpoch(model, loss=loss, metrics=metrics, optimizer=optimizer,
-                                                 device=self.device)
-        valid_epoch = smp.utils.train.ValidEpoch(model, loss=loss, metrics=metrics, stage_name='valid',
-                                                 device=self.device)
-        test_epoch = smp.utils.train.ValidEpoch(model, loss=loss, metrics=metrics, stage_name='test',
-                                                device=self.device)
+        train_epoch = smp.utils.train.TrainEpoch(model, loss=loss, metrics=metrics, optimizer=optimizer, device=self.device)
+        valid_epoch = smp.utils.train.ValidEpoch(model, loss=loss, metrics=metrics, stage_name='valid', device=self.device)
+        test_epoch = smp.utils.train.ValidEpoch(model, loss=loss, metrics=metrics, stage_name='test', device=self.device)
 
         # Initialize W&B
-        if not (self.wandb_api_key is None):
+        if not self.wandb_api_key is None:
             hyperparameters = self.get_hyperparameters()
+            hyperparameters['train_images'] = len(train_loader.dataset.img_paths)
+            hyperparameters['val_images'] = len(val_loader.dataset.img_paths)
+            hyperparameters['test_images'] = len(test_loader.dataset.img_paths)
             os.environ['WANDB_API_KEY'] = self.wandb_api_key
-            run = wandb.init(project=self.wandb_project_name, entity='big_data_lab', name=self.run_name,
+            os.environ['WANDB_SILENT'] = "true"
+            os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+            run = wandb.init(project=self.wandb_project_name, entity='viacheslav_danilov', name=self.run_name,
                              config=hyperparameters, tags=[self.model_name, self.encoder_name, self.encoder_weights])
             log_datasets_files(run, [train_loader, val_loader, test_loader], artefact_name=self.class_name)
 
@@ -307,9 +349,9 @@ class SegmentationModel:
             if best_val_score < val_logs[self.monitor_metric]:
                 best_val_score = val_logs[self.monitor_metric]
                 wandb.log(data={'best/val_score': best_val_score, 'best/val_epoch': epoch}, commit=False)
-                best_weights_path = os.path.join(self.model_dir, 'best_weights.pth')
-                torch.save(model, best_weights_path)
-                print('Best weights are saved to {:s}'.format(best_weights_path))
+                # best_weights_path = os.path.join(self.model_dir, 'best_weights.pth')
+                # torch.save(model, best_weights_path)
+                # print('Best weights are saved to {:s}'.format(best_weights_path))
 
             if best_test_score < test_logs[self.monitor_metric]:
                 best_test_score = test_logs[self.monitor_metric]
@@ -317,8 +359,78 @@ class SegmentationModel:
 
             metrics = self._get_log_metrics(train_logs, val_logs, test_logs)
             masks, maps = self._get_log_images(model, logging_loader)
-            wandb.log(data={'Learning rate': optimizer.param_groups[0]['lr']}, commit=False)
             wandb.log(data=metrics, commit=False)
             wandb.log(data={'Segmentation masks': masks, 'Probability maps': maps})
 
-            scheduler.step()
+
+class TuningModel(SegmentationModel):
+    def __init__(self,
+                 model_name: str = 'Unet',
+                 encoder_name: str = 'resnet18',
+                 encoder_weights: str = 'imagenet',
+                 batch_size: int = 4,
+                 epochs: int = 30,
+                 input_size: Union[int, List[int]] = (512, 512),
+                 class_name: str = 'COVID-19',
+                 loss: str = 'Dice',
+                 optimizer: str = 'AdamW',
+                 lr: float = 0.0001,
+                 monitor_metric: str = 'fscore',
+                 save_dir: str = 'models_covid_tuning'):
+        super().__init__()
+        self.model_name = model_name
+        self.encoder_name = encoder_name
+        self.encoder_weights = encoder_weights
+        self.batch_size = batch_size
+        self.epochs = epochs
+        self.input_size = (input_size, input_size) if isinstance(input_size, int) else input_size
+        self.class_name = class_name
+        self.loss = loss
+        self.optimizer = optimizer
+        self.lr = lr
+        self.monitor_metric = monitor_metric
+        self.save_dir = save_dir
+
+    def train(self,
+              train_loader: torch.utils.data.dataloader.DataLoader,
+              val_loader: torch.utils.data.dataloader.DataLoader,
+              test_loader: torch.utils.data.dataloader.DataLoader,
+              logging_loader: torch.utils.data.dataloader.DataLoader = None) -> None:
+
+        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        model = self.get_model()
+        optimizer = self.build_optimizer(model=model, optimizer=self.optimizer, lr=self.lr)
+        loss = self.build_loss(loss=self.loss)
+        metrics = [smp.utils.metrics.Fscore(threshold=0.5),
+                   smp.utils.metrics.IoU(threshold=0.5),
+                   smp.utils.metrics.Accuracy(threshold=0.5),
+                   smp.utils.metrics.Precision(threshold=0.5),
+                   smp.utils.metrics.Recall(threshold=0.5)]
+        train_epoch = smp.utils.train.TrainEpoch(model, loss=loss, metrics=metrics, optimizer=optimizer, device=self.device)
+        valid_epoch = smp.utils.train.ValidEpoch(model, loss=loss, metrics=metrics, stage_name='valid', device=self.device)
+        test_epoch = smp.utils.train.ValidEpoch(model, loss=loss, metrics=metrics, stage_name='test', device=self.device)
+
+        best_train_score = 0
+        best_val_score = 0
+        best_test_score = 0
+        for epoch in range(0, self.epochs):
+            print('\nEpoch: {:03d}, LR: {:.5f}'.format(epoch, optimizer.param_groups[0]['lr']))
+
+            train_logs = train_epoch.run(train_loader)
+            val_logs = valid_epoch.run(val_loader)
+            test_logs = test_epoch.run(test_loader)
+
+            if best_train_score < train_logs[self.monitor_metric]:
+                best_train_score = train_logs[self.monitor_metric]
+                wandb.log(data={'best/train_score': best_train_score, 'best/train_epoch': epoch}, commit=False)
+
+            if best_val_score < val_logs[self.monitor_metric]:
+                best_val_score = val_logs[self.monitor_metric]
+                wandb.log(data={'best/val_score': best_val_score, 'best/val_epoch': epoch}, commit=False)
+
+            if best_test_score < test_logs[self.monitor_metric]:
+                best_test_score = test_logs[self.monitor_metric]
+                wandb.log(data={'best/test_score': best_test_score, 'best/test_epoch': epoch}, commit=False)
+
+            metrics = self._get_log_metrics(train_logs, val_logs, test_logs)
+            wandb.log(data=metrics)
