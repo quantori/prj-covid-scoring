@@ -34,7 +34,12 @@ class SegmentationDataset(Dataset):
         ann_path = self.ann_paths[idx]
         image = cv2.imread(image_path)
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        mask = convert_ann_to_mask(ann_path=ann_path, class_name=self.class_name)
+
+        # TODO: Fix masks when normal dataset is available
+        if ('rsna_normal' in image_path) or ('chest_xray_normal' in image_path):
+            mask = np.zeros(image.shape[:2], dtype=np.uint8)
+        else:
+            mask = convert_ann_to_mask(ann_path=ann_path, class_name=self.class_name)
 
         # Apply augmentation
         if self.augmentation_params:
