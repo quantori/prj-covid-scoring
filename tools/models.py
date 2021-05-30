@@ -92,6 +92,16 @@ class SegmentationModel:
         return hyperparameters
 
     @staticmethod
+    def _change_loss_name(metrics: Dict[str, float],
+                          search_pattern: str) -> Dict[str, float]:
+        for k in metrics.copy():
+            if search_pattern in k:
+                metrics['loss'] = metrics[k]
+                del metrics[k]
+                break
+        return metrics
+
+    @staticmethod
     def _get_log_metrics(train_logs: Dict[str, float],
                          val_logs: Dict[str, float],
                          test_logs: Dict[str, float],
@@ -281,7 +291,7 @@ class SegmentationModel:
             loss = smp.utils.losses.JaccardLoss()
         elif loss == 'BCE':
             loss = smp.utils.losses.BCELoss()
-        elif loss == 'BCE_with_logits':
+        elif loss == 'BCEL':
             loss = smp.utils.losses.BCEWithLogitsLoss()
         else:
             raise ValueError('Unknown loss: {}'.format(loss))
@@ -341,21 +351,26 @@ class SegmentationModel:
             train_logs = train_epoch.run(train_loader)
             val_logs = valid_epoch.run(val_loader)
             test_logs = test_epoch.run(test_loader)
+            train_logs = self._change_loss_name(metrics=train_logs, search_pattern='loss')
+            val_logs = self._change_loss_name(metrics=val_logs, search_pattern='loss')
+            test_logs = self._change_loss_name(metrics=test_logs, search_pattern='loss')
 
             if best_train_score < train_logs[self.monitor_metric]:
                 best_train_score = train_logs[self.monitor_metric]
                 wandb.log(data={'best/train_score': best_train_score, 'best/train_epoch': epoch}, commit=False)
 
-            if best_val_score < val_logs[self.monitor_metric]:
-                best_val_score = val_logs[self.monitor_metric]
-                wandb.log(data={'best/val_score': best_val_score, 'best/val_epoch': epoch}, commit=False)
-                # best_weights_path = os.path.join(self.model_dir, 'best_weights.pth')
-                # torch.save(model, best_weights_path)
-                # print('Best weights are saved to {:s}'.format(best_weights_path))
+            if bool(val_logs):
+                if best_val_score < val_logs[self.monitor_metric]:
+                    best_val_score = val_logs[self.monitor_metric]
+                    wandb.log(data={'best/val_score': best_val_score, 'best/val_epoch': epoch}, commit=False)
+                    best_weights_path = os.path.join(self.model_dir, 'best_weights.pth')
+                    torch.save(model, best_weights_path)
+                    print('Best weights are saved to {:s}'.format(best_weights_path))
 
-            if best_test_score < test_logs[self.monitor_metric]:
-                best_test_score = test_logs[self.monitor_metric]
-                wandb.log(data={'best/test_score': best_test_score, 'best/test_epoch': epoch}, commit=False)
+            if bool(test_logs):
+                if best_test_score < test_logs[self.monitor_metric]:
+                    best_test_score = test_logs[self.monitor_metric]
+                    wandb.log(data={'best/test_score': best_test_score, 'best/test_epoch': epoch}, commit=False)
 
             metrics = self._get_log_metrics(train_logs, val_logs, test_logs)
             masks, maps = self._get_log_images(model, logging_loader)
@@ -375,8 +390,7 @@ class TuningModel(SegmentationModel):
                  loss: str = 'Dice',
                  optimizer: str = 'AdamW',
                  lr: float = 0.0001,
-                 monitor_metric: str = 'fscore',
-                 save_dir: str = 'models_covid_tuning'):
+                 monitor_metric: str = 'fscore'):
         super().__init__()
         self.model_name = model_name
         self.encoder_name = encoder_name
@@ -389,7 +403,6 @@ class TuningModel(SegmentationModel):
         self.optimizer = optimizer
         self.lr = lr
         self.monitor_metric = monitor_metric
-        self.save_dir = save_dir
 
     def train(self,
               train_loader: torch.utils.data.dataloader.DataLoader,
@@ -419,18 +432,23 @@ class TuningModel(SegmentationModel):
             train_logs = train_epoch.run(train_loader)
             val_logs = valid_epoch.run(val_loader)
             test_logs = test_epoch.run(test_loader)
+            train_logs = self._change_loss_name(metrics=train_logs, search_pattern='loss')
+            val_logs = self._change_loss_name(metrics=val_logs, search_pattern='loss')
+            test_logs = self._change_loss_name(metrics=test_logs, search_pattern='loss')
 
             if best_train_score < train_logs[self.monitor_metric]:
                 best_train_score = train_logs[self.monitor_metric]
                 wandb.log(data={'best/train_score': best_train_score, 'best/train_epoch': epoch}, commit=False)
 
-            if best_val_score < val_logs[self.monitor_metric]:
-                best_val_score = val_logs[self.monitor_metric]
-                wandb.log(data={'best/val_score': best_val_score, 'best/val_epoch': epoch}, commit=False)
+            if bool(val_logs):
+                if best_val_score < val_logs[self.monitor_metric]:
+                    best_val_score = val_logs[self.monitor_metric]
+                    wandb.log(data={'best/val_score': best_val_score, 'best/val_epoch': epoch}, commit=False)
 
-            if best_test_score < test_logs[self.monitor_metric]:
-                best_test_score = test_logs[self.monitor_metric]
-                wandb.log(data={'best/test_score': best_test_score, 'best/test_epoch': epoch}, commit=False)
+            if bool(test_logs):
+                if best_test_score < test_logs[self.monitor_metric]:
+                    best_test_score = test_logs[self.monitor_metric]
+                    wandb.log(data={'best/test_score': best_test_score, 'best/test_epoch': epoch}, commit=False)
 
             metrics = self._get_log_metrics(train_logs, val_logs, test_logs)
             wandb.log(data=metrics)
