@@ -98,27 +98,27 @@ if __name__ == '__main__':
     parser.add_argument('--dataset_dir', default='dataset/covid_segmentation', type=str, help='dataset/covid_segmentation or dataset/lungs_segmentation')
     parser.add_argument('--included_datasets', default=None, type=str)
     parser.add_argument('--excluded_datasets', default=None, type=str)
-    parser.add_argument('--ratio', nargs='+', default=(0.8, 0.2, 0.0), type=float, help='train, val, and test sizes')
+    parser.add_argument('--ratio', nargs='+', default=(0.9, 0.1, 0.0), type=float, help='train, val, and test sizes')
     parser.add_argument('--tuning_method', default='random', type=str, help='grid, random, bayes')
-    parser.add_argument('--max_runs', default=60, type=int, help='number of trials to run')
+    parser.add_argument('--max_runs', default=50, type=int, help='number of trials to run')
     parser.add_argument('--input_size', nargs='+', default=(512, 512), type=int)
     parser.add_argument('--model_name', default='Unet', type=str, help='Unet, Unet++, DeepLabV3, DeepLabV3+, FPN, Linknet, PSPNet or PAN')
     parser.add_argument('--encoder_name', default='resnet18', type=str)
     parser.add_argument('--encoder_weights', default='imagenet', type=str, help='imagenet, ssl or swsl')
-    parser.add_argument('--batch_size', default=4, type=int)
+    parser.add_argument('--batch_size', default=8, type=int)
     parser.add_argument('--loss', default='Dice', type=str, help='Dice, Jaccard, BCE or BCE_with_logits')
     parser.add_argument('--optimizer', default='Adam', type=str, help='SGD, Adam, AdamW, RMSprop, Adam_amsgrad or AdamW_amsgrad')
-    parser.add_argument('--epochs', default=20, type=int)
+    parser.add_argument('--epochs', default=10, type=int)
     parser.add_argument('--monitor_metric', default='fscore', type=str)
-    parser.add_argument('--wandb_project_name', default=None, type=str)
+    parser.add_argument('--wandb_project_name', default='temp', type=str)
     parser.add_argument('--wandb_api_key', default='b45cbe889f5dc79d1e9a0c54013e6ab8e8afb871', type=str)
     args = parser.parse_args()
 
     # Used only for debugging
     args.excluded_datasets = [
-        'covid-chestxray-dataset',
-        'COVID-19-Radiography-Database',
-        'Figure1-COVID-chestxray-dataset',
+        # 'covid-chestxray-dataset',
+        # 'COVID-19-Radiography-Database',
+        # 'Figure1-COVID-chestxray-dataset',
         'rsna_normal',
         'chest_xray_normal'
     ]
@@ -144,6 +144,7 @@ if __name__ == '__main__':
         'method': args.tuning_method,
         'metric': {'name': 'val_fscore', 'goal': 'maximize'},
         # 'early_terminate': {'type': 'hyperband', 's': 2, 'eta': 3, 'max_iter': 81},
+        # 'early_terminate': {'type': 'hyperband', 'min_iter': 2},
         'parameters': {
             # Constant hyperparameters
             'dataset_dir': {'value': args.dataset_dir},
@@ -157,15 +158,16 @@ if __name__ == '__main__':
             'monitor_metric': {'value': args.monitor_metric},
 
             # Variable hyperparameters
-            # 'input_size': {'values': get_values(min=384, max=768, step=32, dtype=int)},
-            'input_size': {'values': [512]},
+            'input_size': {'values': get_values(min=384, max=768, step=32, dtype=int)},
+            # 'input_size': {'values': [512]},
             'loss': {'values': ['Dice', 'Jaccard', 'BCE', 'BCEL']},
             # 'loss': {'values': ['Dice']},
-            # 'optimizer': {'values': ['SGD', 'RMSprop', 'Adam', 'AdamW', 'Adam_amsgrad', 'AdamW_amsgrad']},
-            'optimizer': {'values': ['Adam_amsgrad']},
-            # 'lr': {'values': [1e-1, 1e-2, 1e-3, 1e-4, 1e-5]},
-            'lr': {'values': [1e-3]},
-            'encoder_name': {'values': ['resnet18',
+            'optimizer': {'values': ['SGD', 'RMSprop', 'Adam', 'AdamW', 'Adam_amsgrad', 'AdamW_amsgrad']},
+            # 'optimizer': {'values': ['Adam_amsgrad']},
+            'lr': {'values': [1e-2, 1e-3, 1e-4]},
+            # 'lr': {'values': [1e-3]},
+            'encoder_name': {'values': ['vgg19_bn']}
+            # 'encoder_name': {'values': ['resnet18',
                                         # 'resnet34', 'resnet50', 'resnet101',                            # ResNet
                                         # 'resnext50_32x4d',                                              # ResNeXt
                                         # 'timm-resnest14d', 'timm-resnest26d', 'timm-resnest50d',        # ResNeSt
@@ -177,7 +179,7 @@ if __name__ == '__main__':
                                         # 'mobilenet_v2',                                                 # MobileNet
                                         # 'dpn68', 'dpn92', 'dpn98',                                      # DPN
                                         # 'vgg13_bn', 'vgg16_bn', 'vgg19_bn'                              # VGG
-                                        ]}
+                                        # ]}
         }
     }
 
