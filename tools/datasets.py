@@ -50,11 +50,13 @@ class SegmentationDataset(Dataset):
         if self.transform_params:
             preprocess_image = transforms.Compose([transforms.ToTensor(),
                                                    transforms.Resize(size=self.input_size,
+                                                                     # Image.BICUBIC (PyTorch: 1.7.1), InterpolationMode.BICUBIC  (PyTorch: 1.8.1)
                                                                      interpolation=Image.BICUBIC),
                                                    transforms.Normalize(mean=self.transform_params['mean'],
                                                                         std=self.transform_params['std'])])
             preprocess_mask = transforms.Compose([transforms.ToTensor(),
                                                   transforms.Resize(size=self.input_size,
+                                                                    # Image.NEAREST (PyTorch: 1.7.1), InterpolationMode.NEAREST  (PyTorch: 1.8.1)
                                                                     interpolation=Image.NEAREST)])
             image = preprocess_image(image)
             mask = preprocess_mask(mask)
