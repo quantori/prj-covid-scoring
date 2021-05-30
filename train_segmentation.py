@@ -79,7 +79,7 @@ if __name__ == '__main__':
     parser.add_argument('--excluded_datasets', default=None, type=str)
     parser.add_argument('--ratio', nargs='+', default=(0.8, 0.1, 0.1), type=float, help='train, val, and test sizes')
     parser.add_argument('--input_size', nargs='+', default=(512, 512), type=int)
-    parser.add_argument('--model_name', default='PAN', type=str, help='Unet, Unet++, DeepLabV3, DeepLabV3+, FPN, Linknet, PSPNet or PAN')
+    parser.add_argument('--model_name', default='Unet', type=str, help='Unet, Unet++, DeepLabV3, DeepLabV3+, FPN, Linknet, PSPNet or PAN')
     parser.add_argument('--encoder_name', default='resnet18', type=str)
     parser.add_argument('--encoder_weights', default='imagenet', type=str, help='imagenet, ssl or swsl')
     parser.add_argument('--batch_size', default=4, type=int)
@@ -93,9 +93,14 @@ if __name__ == '__main__':
     parser.add_argument('--wandb_api_key', default='b45cbe889f5dc79d1e9a0c54013e6ab8e8afb871', type=str)
     args = parser.parse_args()
 
-    # args.excluded_datasets = ['covid-chestxray-dataset', 'COVID-19-Radiography-Database', 'Figure1-COVID-chestxray-dataset']     # Used only for debugging
-    # args.excluded_datasets = ['covid-chestxray-dataset', 'COVID-19-Radiography-Database', 'Figure1-COVID-chestxray-dataset', 'rsna_normal', 'chest_xray_normal']     # Used only for debugging
-    # args.excluded_datasets = ['rsna_normal', 'chest_xray_normal']
+    # Used only for debugging
+    args.excluded_datasets = [
+        # 'covid-chestxray-dataset',
+        # 'COVID-19-Radiography-Database',
+        # 'Figure1-COVID-chestxray-dataset',
+        'rsna_normal',
+        'chest_xray_normal'
+    ]
 
     if 'covid' in args.dataset_dir:
         args.class_name = 'COVID-19'
@@ -105,9 +110,9 @@ if __name__ == '__main__':
         raise ValueError('There is no class name for dataset {:s}'.format(args.dataset_dir))
 
     if not isinstance(args.wandb_project_name, str) and args.class_name == 'COVID-19':
-        args.wandb_project_name = 'covid_segmentation_tuning'
+        args.wandb_project_name = 'covid_segmentation'
     elif not isinstance(args.wandb_project_name, str) and args.class_name == 'Lungs':
-        args.wandb_project_name = 'lungs_segmentation_tuning'
+        args.wandb_project_name = 'lungs_segmentation'
     else:
         print('W&B project name: {:s}'.format(args.wandb_project_name))
 
