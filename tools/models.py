@@ -30,7 +30,7 @@ class SegmentationModel:
                  epochs: int = 30,
                  input_size: Union[int, List[int]] = (512, 512),
                  in_channels: int = 3,
-                 classes: int = 1,
+                 num_classes: int = 1,
                  class_name: str = 'COVID-19',
                  activation: str = 'sigmoid',
                  loss: str = 'Dice',
@@ -54,7 +54,7 @@ class SegmentationModel:
         self.batch_size = batch_size
         self.epochs = epochs
         self.in_channels = in_channels
-        self.classes = classes
+        self.num_classes = num_classes
         self.class_name = class_name
         self.activation = activation
         self.loss = loss
@@ -80,7 +80,7 @@ class SegmentationModel:
             'img_height': self.input_size[0],
             'img_width': self.input_size[1],
             'img_channels': self.in_channels,
-            'classes': self.classes,
+            'classes': self.num_classes,
             'class_name': self.class_name,
             'activation': self.activation,
             'loss': self.loss,
@@ -168,7 +168,7 @@ class SegmentationModel:
         print('\033[92m' + 'Loss:             {:s}'.format(self.loss) + '\033[0m')
         print('\033[92m' + 'Optimizer:        {:s}'.format(self.optimizer) + '\033[0m')
         print('\033[92m' + 'Learning rate:    {:.4f}'.format(self.lr) + '\033[0m')
-        print('\033[92m' + 'Class count:      {:d}'.format(self.classes) + '\033[0m')
+        print('\033[92m' + 'Class count:      {:d}'.format(self.num_classes) + '\033[0m')
         print('\033[92m' + 'Activation:       {:s}'.format(self.activation) + '\033[0m')
         print('\033[92m' + 'Monitor metric:   {:s}'.format(self.monitor_metric) + '\033[0m\n')
 
@@ -204,44 +204,50 @@ class SegmentationModel:
             model = smp.Unet(encoder_name=self.encoder_name,
                              encoder_weights=self.encoder_weights,
                              in_channels=self.in_channels,
-                             classes=self.classes,
+                             classes=self.num_classes,
                              activation=self.activation)
         elif self.model_name == 'Unet++':
             model = smp.UnetPlusPlus(encoder_name=self.encoder_name,
                                      encoder_weights=self.encoder_weights,
                                      in_channels=self.in_channels,
-                                     classes=self.classes,
+                                     classes=self.num_classes,
                                      activation=self.activation)
         elif self.model_name == 'DeepLabV3':
             model = smp.DeepLabV3(encoder_name=self.encoder_name,
                                   encoder_weights=self.encoder_weights,
                                   in_channels=self.in_channels,
-                                  classes=self.classes,
+                                  classes=self.num_classes,
                                   activation=self.activation)
         elif self.model_name == 'DeepLabV3+':
             model = smp.DeepLabV3Plus(encoder_name=self.encoder_name,
                                       encoder_weights=self.encoder_weights,
                                       in_channels=self.in_channels,
-                                      classes=self.classes,
+                                      classes=self.num_classes,
                                       activation=self.activation)
         elif self.model_name == 'FPN':
             model = smp.FPN(encoder_name=self.encoder_name,
                             encoder_weights=self.encoder_weights,
                             in_channels=self.in_channels,
-                            classes=self.classes,
+                            classes=self.num_classes,
                             activation=self.activation)
         elif self.model_name == 'Linknet':
             model = smp.Linknet(encoder_name=self.encoder_name,
                                 encoder_weights=self.encoder_weights,
                                 in_channels=self.in_channels,
-                                classes=self.classes,
+                                classes=self.num_classes,
                                 activation=self.activation)
         elif self.model_name == 'PSPNet':
             model = smp.PSPNet(encoder_name=self.encoder_name,
                                encoder_weights=self.encoder_weights,
                                in_channels=self.in_channels,
-                               classes=self.classes,
+                               classes=self.num_classes,
                                activation=self.activation)
+        elif self.model_name == 'PAN':
+            model = smp.PAN(encoder_name=self.encoder_name,
+                            encoder_weights=self.encoder_weights,
+                            in_channels=self.in_channels,
+                            classes=self.num_classes,
+                            activation=self.activation)
         else:
             raise ValueError('Unknown model name:'.format(self.model_name))
 

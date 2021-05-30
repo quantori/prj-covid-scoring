@@ -102,7 +102,7 @@ if __name__ == '__main__':
     parser.add_argument('--tuning_method', default='random', type=str, help='grid, random, bayes')
     parser.add_argument('--max_runs', default=60, type=int, help='number of trials to run')
     parser.add_argument('--input_size', nargs='+', default=(512, 512), type=int)
-    parser.add_argument('--model_name', default='Unet', type=str, help='Unet, Unet++, DeepLabV3, DeepLabV3+, FPN, Linknet, or PSPNet')
+    parser.add_argument('--model_name', default='Unet', type=str, help='Unet, Unet++, DeepLabV3, DeepLabV3+, FPN, Linknet, PSPNet or PAN')
     parser.add_argument('--encoder_name', default='resnet18', type=str)
     parser.add_argument('--encoder_weights', default='imagenet', type=str, help='imagenet, ssl or swsl')
     parser.add_argument('--batch_size', default=4, type=int)

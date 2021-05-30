@@ -79,7 +79,7 @@ if __name__ == '__main__':
     parser.add_argument('--excluded_datasets', default=None, type=str)
     parser.add_argument('--ratio', nargs='+', default=(0.8, 0.1, 0.1), type=float, help='train, val, and test sizes')
     parser.add_argument('--input_size', nargs='+', default=(512, 512), type=int)
-    parser.add_argument('--model_name', default='Unet', type=str, help='Unet, Unet++, DeepLabV3, DeepLabV3+, FPN, Linknet, or PSPNet')
+    parser.add_argument('--model_name', default='PAN', type=str, help='Unet, Unet++, DeepLabV3, DeepLabV3+, FPN, Linknet, PSPNet or PAN')
     parser.add_argument('--encoder_name', default='resnet18', type=str)
     parser.add_argument('--encoder_weights', default='imagenet', type=str, help='imagenet, ssl or swsl')
     parser.add_argument('--batch_size', default=4, type=int)
