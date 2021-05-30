@@ -22,6 +22,7 @@ def split_data(img_paths: List[str],
                class_name: str,
                seed: int = 11,
                ratio: List[float] = (0.8, 0.1, 0.1)) -> Dict:
+
     assert sum(ratio) <= 1, 'The sum of ratio values should not be greater than 1'
     output = {'train': Tuple[List[str], List[str]],
               'val': Tuple[List[str], List[str]],
@@ -33,19 +34,39 @@ def split_data(img_paths: List[str],
     img_paths_test: List[str] = []
     ann_paths_test: List[str] = []
 
-    train_ratio = ratio[0] / (ratio[0] + ratio[1])
+    train_ratio = ratio[0]
     for dataset_name in dataset_names:
         img_paths_ds = list(filter(lambda path: dataset_name in path, img_paths))
         ann_paths_ds = list(filter(lambda path: dataset_name in path, ann_paths))
 
-        # TODO: include normal images as well
-        img_paths_ds, ann_paths_ds = drop_empty_annotations(img_paths=img_paths_ds,
-                                                            ann_paths=ann_paths_ds,
-                                                            class_name=class_name)
+        # TODO: Fix masks when normal dataset is available
+        if dataset_name not in ['rsna_normal', 'chest_xray_normal']:
+            img_paths_ds, ann_paths_ds = drop_empty_annotations(img_paths=img_paths_ds,
+                                                                ann_paths=ann_paths_ds,
+                                                                class_name=class_name)
 
-        x_train, x_test, y_train, y_test = train_test_split(img_paths_ds, ann_paths_ds, test_size=ratio[2],
-                                                            random_state=seed)
-        x_train, x_val, y_train, y_val = train_test_split(x_train, y_train, train_size=train_ratio, random_state=seed)
+        # validation fraction = 0
+        if ratio[1] == 0 and ratio[2] > 0:
+            x_train, x, y_train, y = train_test_split(img_paths_ds, ann_paths_ds, train_size=train_ratio, random_state=seed)
+            x_val, y_val = [], []
+            x_test, y_test = x, y
+        # test fraction = 0
+        elif ratio[1] > 0 and ratio[2] == 0:
+            x_train, x, y_train, y = train_test_split(img_paths_ds, ann_paths_ds, train_size=train_ratio, random_state=seed)
+            x_val, y_val = x, y
+            x_test, y_test = [], []
+        # validation and test fractions > 0
+        elif ratio[1] > 0 and ratio[2] > 0:
+            x_train, x, y_train, y = train_test_split(img_paths_ds, ann_paths_ds, train_size=train_ratio, random_state=seed)
+            test_ratio = ratio[2] / (ratio[1] + ratio[2])
+            x_val, x_test, y_val, y_test = train_test_split(x, y, test_size=test_ratio, random_state=seed)
+        # validation and test fractions = 0
+        elif ratio[1] == 0 and ratio[2] == 0:
+            x_train, y_train = img_paths_ds, ann_paths_ds
+            x_val, y_val = [], []
+            x_test, y_test = [], []
+        else:
+            raise ValueError('Incorrect ratio values!')
 
         img_paths_train.extend(x_train)
         ann_paths_train.extend(y_train)
@@ -78,9 +99,9 @@ def drop_empty_annotations(img_paths: List[str],
 
 
 def covid_segmentation_labels(class_names: List[str]) -> Dict[int, str]:
-    l = {0: 'Normal'}
-    if 'Normal' in class_names:
-        class_names.remove('Normal')
+    l = {0: 'Background'}
+    if 'Background' in class_names:
+        class_names.remove('Background')
     for i, label in enumerate(class_names, 1):
         l[i] = label
     return l
