@@ -3,6 +3,7 @@ import time
 import argparse
 from typing import List, Union
 
+import torch
 import wandb
 import numpy as np
 from torch.cuda import device_count
@@ -31,7 +32,7 @@ def main(config=None):
                              dataset_names=dataset_names,
                              class_name=config.class_name,
                              seed=11,
-                             ratio=[0.8, 0.1, 0.1])
+                             ratio=args.ratio)
 
         preprocessing_params = smp.encoders.get_preprocessing_params(encoder_name=config.encoder_name,
                                                                      pretrained=config.encoder_weights)
@@ -51,23 +52,30 @@ def main(config=None):
         val_loader = DataLoader(datasets['val'], batch_size=config.batch_size, num_workers=num_workers)
         test_loader = DataLoader(datasets['test'], batch_size=config.batch_size, num_workers=num_workers)
 
+        wandb.log({'train_images': len(train_loader.dataset.img_paths),
+                   'val_images': len(val_loader.dataset.img_paths),
+                   'test_images': len(test_loader.dataset.img_paths)},
+                  commit=False)
+
         # Build model
         model = TuningModel(model_name=config.model_name,
                             encoder_name=config.encoder_name,
                             encoder_weights=config.encoder_weights,
                             batch_size=config.batch_size,
                             epochs=config.epochs,
-                            class_name=config.class_name,
-                            lr=config.lr,
                             input_size=config.input_size,
-                            monitor_metric=config.monitor_metric,
-                            save_dir=config.save_dir)
+                            class_name=config.class_name,
+                            loss=config.loss,
+                            optimizer=config.optimizer,
+                            lr=config.lr,
+                            monitor_metric=config.monitor_metric)
 
         start = time.time()
         model.train(train_loader, val_loader, test_loader, logging_loader=None)
         end = time.time()
         print('\033[92m' + '\n********** Run {:s} took {} **********\n'.format(run_name, convert_seconds_to_hms(end - start)) + '\033[0m')
         del model
+        torch.cuda.empty_cache()
 
 
 def get_values(min: int,
@@ -88,9 +96,11 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='Tuning pipeline')
     parser.add_argument('--dataset_dir', default='dataset/covid_segmentation', type=str, help='dataset/covid_segmentation or dataset/lungs_segmentation')
-    parser.add_argument('--class_name', default='COVID-19', type=str, help='COVID-19 or Lungs')
+    parser.add_argument('--included_datasets', default=None, type=str)
+    parser.add_argument('--excluded_datasets', default=None, type=str)
+    parser.add_argument('--ratio', nargs='+', default=(0.8, 0.2, 0.0), type=float, help='train, val, and test sizes')
     parser.add_argument('--tuning_method', default='random', type=str, help='grid, random, bayes')
-    parser.add_argument('--max_runs', default=5, type=int, help='number of trials to run')
+    parser.add_argument('--max_runs', default=60, type=int, help='number of trials to run')
     parser.add_argument('--input_size', nargs='+', default=(512, 512), type=int)
     parser.add_argument('--model_name', default='Unet', type=str, help='Unet, Unet++, DeepLabV3, DeepLabV3+, FPN, Linknet, or PSPNet')
     parser.add_argument('--encoder_name', default='resnet18', type=str)
@@ -98,14 +108,12 @@ if __name__ == '__main__':
     parser.add_argument('--batch_size', default=4, type=int)
     parser.add_argument('--loss', default='Dice', type=str, help='Dice, Jaccard, BCE or BCE_with_logits')
     parser.add_argument('--optimizer', default='Adam', type=str, help='SGD, Adam, AdamW, RMSprop, Adam_amsgrad or AdamW_amsgrad')
-    parser.add_argument('--epochs', default=3, type=int)
+    parser.add_argument('--epochs', default=20, type=int)
     parser.add_argument('--monitor_metric', default='fscore', type=str)
-    parser.add_argument('--save_dir', default='models_covid_tuning', type=str)
-    parser.add_argument('--included_datasets', default=None, type=str)
-    parser.add_argument('--excluded_datasets', default=None, type=str)
     parser.add_argument('--wandb_project_name', default='covid_segmentation_tuning', type=str)
     parser.add_argument('--wandb_api_key', default='b45cbe889f5dc79d1e9a0c54013e6ab8e8afb871', type=str)
     args = parser.parse_args()
+
     # Used only for debugging
     args.excluded_datasets = [
         'covid-chestxray-dataset',
@@ -115,48 +123,56 @@ if __name__ == '__main__':
         'chest_xray_normal'
     ]
 
+    if 'covid' in args.dataset_dir:
+        args.class_name = 'COVID-19'
+    elif 'lungs' in args.dataset_dir:
+        args.class_name = 'Lungs'
+    else:
+        raise ValueError('There is no class name for dataset {:s}'.format(args.dataset_dir))
+
     os.environ['WANDB_API_KEY'] = args.wandb_api_key
     os.environ['WANDB_SILENT'] = "true"
     os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
-
     sweep_config = {
         'method': args.tuning_method,
         'metric': {'name': 'val_fscore', 'goal': 'maximize'},
         # 'early_terminate': {'type': 'hyperband', 's': 2, 'eta': 3, 'max_iter': 81},
         'parameters': {
             # Constant hyperparameters
+            'dataset_dir': {'value': args.dataset_dir},
+            'class_name': {'value': args.class_name},
+            'included_datasets': {'value': args.included_datasets},
+            'excluded_datasets': {'value': args.excluded_datasets},
             'model_name': {'value': args.model_name},
             'encoder_weights': {'value': args.encoder_weights},
             'batch_size': {'value': args.batch_size},
             'epochs': {'value': args.epochs},
-            'class_name': {'value': args.class_name},
-            'excluded_datasets': {'value': args.excluded_datasets},
-            'dataset_dir': {'value': args.dataset_dir},
-            'included_datasets': {'value': args.included_datasets},
             'monitor_metric': {'value': args.monitor_metric},
-            'save_dir': {'value': args.save_dir},
 
             # Variable hyperparameters
-            'input_size': {'values': get_values(min=384, max=768, step=32, dtype=int)},
-            # 'loss': {'values': ['Dice', 'Jaccard', 'BCE', 'BCE_with_logits']},
-            'loss': {'values': ['Dice']},
-            'optimizer': {'values': ['SGD', 'RMSprop', 'Adam', 'AdamW', 'Adam_amsgrad', 'AdamW_amsgrad']},
-            'lr': {'values': [1e-1, 1e-2, 1e-3, 1e-4, 1e-5]},
+            # 'input_size': {'values': get_values(min=384, max=768, step=32, dtype=int)},
+            'input_size': {'values': [512]},
+            'loss': {'values': ['Dice', 'Jaccard', 'BCE', 'BCEL']},
+            # 'loss': {'values': ['Dice']},
+            # 'optimizer': {'values': ['SGD', 'RMSprop', 'Adam', 'AdamW', 'Adam_amsgrad', 'AdamW_amsgrad']},
+            'optimizer': {'values': ['Adam_amsgrad']},
+            # 'lr': {'values': [1e-1, 1e-2, 1e-3, 1e-4, 1e-5]},
+            'lr': {'values': [1e-3]},
             'encoder_name': {'values': ['resnet18',
                                         # 'resnet34', 'resnet50', 'resnet101',                            # ResNet
                                         # 'resnext50_32x4d',                                              # ResNeXt
                                         # 'timm-resnest14d', 'timm-resnest26d', 'timm-resnest50d',        # ResNeSt
                                         # 'timm-regnetx_008', 'timm-regnetx_032', 'timm-regnetx_064',     # RegNet(x/y)
                                         # 'se_resnet50', 'se_resnext50_32x4d', 'se_resnext101_32x4d',     # SE-Net
-                                        # 'densenet121', 'densenet169', 'densenet201', 'densenet161',     # DenseNet
+                                        # 'densenet121', 'densenet161', 'densenet201', 'densenet161',     # DenseNet
                                         # 'xception', 'inceptionv4',                                      # Inception
                                         # 'efficientnet-b0', 'efficientnet-b1', 'efficientnet-b2',        # EfficientNet
                                         # 'mobilenet_v2',                                                 # MobileNet
                                         # 'dpn68', 'dpn92', 'dpn98',                                      # DPN
                                         # 'vgg13_bn', 'vgg16_bn', 'vgg19_bn'                              # VGG
                                         ]}
-            }
         }
+    }
 
     sweep_id = wandb.sweep(sweep=sweep_config, entity='viacheslav_danilov', project=args.wandb_project_name)
     wandb.agent(sweep_id=sweep_id, function=main, count=args.max_runs)
