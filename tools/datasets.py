@@ -3,6 +3,7 @@ from typing import List, Tuple, Union
 import cv2
 import numpy as np
 from PIL import Image
+import torch
 from torch.utils.data import Dataset
 import torchvision.transforms as transforms
 
@@ -67,3 +68,37 @@ class SegmentationDataset(Dataset):
             # transformed_image.show()
             # transformed_mask.show()
         return image, mask
+
+
+class LungLoader(Dataset):
+    def __init__(self,
+                 img_paths: List[str],
+                 lung_semgentation_model=None,
+                 input_size: Union[int, List[int]] = (512, 512),
+                 transform_params=None) -> None:
+        self.img_paths = img_paths
+        self.lung_semgentation_model = lung_semgentation_model
+        self.input_size = (input_size, input_size) if isinstance(input_size, int) else input_size
+        self.transform_params = transform_params
+        self.preprocess_image = transforms.Compose([transforms.ToTensor(),
+                                                    transforms.Resize(size=self.input_size,
+                                                                      interpolation=Image.BICUBIC),
+                                                    transforms.Normalize(mean=self.transform_params['mean'],
+                                                                         std=self.transform_params['std'])])
+        self.lung_semgentation_model = self.lung_semgentation_model.eval()
+
+    def __len__(self):
+        return len(self.img_paths)
+
+    def __getitem__(self,
+                    idx: int) -> Tuple[np.ndarray, np.ndarray]:
+        image_path = self.img_paths[idx]
+        image = cv2.imread(image_path)
+        image = cv2.resize(cv2.cvtColor(image, cv2.COLOR_BGR2RGB), self.input_size)
+        with torch.no_grad():
+            transformed_image = self.preprocess_image(image)
+            result = self.lung_semgentation_model(torch.unsqueeze(transformed_image, 0))
+            mask = result.permute(0, 2, 3, 1).detach().numpy()[0, :, :, :] > 0.5
+
+        cropped_lungs = image * mask
+        return cropped_lungs

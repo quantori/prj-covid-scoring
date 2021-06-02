@@ -9,6 +9,7 @@ import albumentations as A
 import segmentation_models_pytorch as smp
 
 from tools.data_processing_tools import log_datasets_files
+from tools.utils import EarlyStopping
 
 
 # TODO: think of adding more augmentation transformations such as Cutout, Grid Mask, MixUp, CutMix, Cutout, Mosaic
@@ -36,6 +37,9 @@ class SegmentationModel:
                  loss: str = 'Dice',
                  optimizer: str = 'AdamW',
                  lr: float = 0.0001,
+                 es_mode: str = None,
+                 es_patience: int = None,
+                 es_min_delta: float = 0,
                  monitor_metric: str = 'fscore',
                  logging_labels: Dict[int, str] = None,
                  augmentation_params: A.Compose = None,
@@ -60,6 +64,9 @@ class SegmentationModel:
         self.loss = loss
         self.optimizer = optimizer
         self.lr = lr
+        self.es_mode = es_mode
+        self.es_patience = es_patience
+        self.es_min_delta = es_min_delta
         self.monitor_metric = monitor_metric
         run_time = datetime.now().strftime("%d%m%y_%H%M")
         self.run_name = '{:s}_{:s}_{:s}_{:s}'.format(self.model_name, self.encoder_name, self.encoder_weights, run_time)
@@ -88,6 +95,9 @@ class SegmentationModel:
             'lr': self.lr,
             'monitor_metric': self.monitor_metric,
             'device': self.device,
+            'es_mode': self.es_mode,
+            'es_patience': self.es_patience,
+            'es_min_delta': self.es_min_delta
         }
         return hyperparameters
 
@@ -326,6 +336,13 @@ class SegmentationModel:
         # LR overview: https://www.kaggle.com/isbhargav/guide-to-pytorch-learning-rate-scheduling
 
         loss = self.build_loss(loss=self.loss)
+        es = EarlyStopping(model=model,
+                           monitor_metric=self.monitor_metric,
+                           mode=self.es_mode,
+                           patience=self.es_patience,
+                           min_delta=self.es_min_delta
+                           )
+
         metrics = [smp.utils.metrics.Fscore(threshold=0.5),
                    smp.utils.metrics.IoU(threshold=0.5),
                    smp.utils.metrics.Accuracy(threshold=0.5),
@@ -382,6 +399,9 @@ class SegmentationModel:
             masks, maps = self._get_log_images(model, logging_loader)
             wandb.log(data=metrics, commit=False)
             wandb.log(data={'Segmentation masks': masks, 'Probability maps': maps})
+            es(train_logs, model)
+            if es.early_stop:
+                break
 
 
 class TuningModel(SegmentationModel):
