@@ -63,6 +63,9 @@ def main(args):
                               loss=args.loss,
                               optimizer=args.optimizer,
                               lr=args.lr,
+                              es_mode=args.es_mode,
+                              es_min_delta=args.es_min_delta,
+                              es_patience=args.es_patience,
                               input_size=args.input_size,
                               monitor_metric=args.monitor_metric,
                               save_dir=args.save_dir,
@@ -86,6 +89,10 @@ if __name__ == '__main__':
     parser.add_argument('--loss', default='Dice', type=str, help='Dice, Jaccard, BCE or BCEL')
     parser.add_argument('--optimizer', default='Adam', type=str, help='SGD, Adam, AdamW, RMSprop, Adam_amsgrad or AdamW_amsgrad')
     parser.add_argument('--lr', default=0.001, type=float)
+    parser.add_argument('--es_mode', default='max', type=str)
+    parser.add_argument('--es_min_delta', default=0.001, type=float)
+    parser.add_argument('--es_patience', default=10, type=int)
+
     parser.add_argument('--epochs', default=2, type=int)
     parser.add_argument('--monitor_metric', default='fscore', type=str)
     parser.add_argument('--save_dir', default='models', type=str)
