@@ -46,8 +46,7 @@ def main(config=None):
                                           transform_params=preprocessing_params)
             datasets[subset_name] = dataset
 
-        # If debug is frozen, use num_workers = 0
-        num_workers = 8 * device_count()
+        num_workers = 8 * device_count()            # If debug is frozen, use num_workers = 0
         train_loader = DataLoader(datasets['train'], batch_size=config.batch_size, num_workers=num_workers)
         val_loader = DataLoader(datasets['val'], batch_size=config.batch_size, num_workers=num_workers)
         test_loader = DataLoader(datasets['test'], batch_size=config.batch_size, num_workers=num_workers)
@@ -67,8 +66,10 @@ def main(config=None):
                             class_name=config.class_name,
                             loss=config.loss,
                             optimizer=config.optimizer,
-                            lr=config.lr,
-                            monitor_metric=config.monitor_metric)
+                            es_patience=args.es_patience,
+                            es_min_delta=args.es_min_delta,
+                            monitor_metric=config.monitor_metric,
+                            lr=config.lr)
 
         start = time.time()
         model.train(train_loader, val_loader, test_loader, logging_loader=None)
@@ -78,9 +79,7 @@ def main(config=None):
         torch.cuda.empty_cache()
 
 
-def get_values(min: int,
-               max: int,
-               step: int, dtype) -> Union[List[int], List[float]]:
+def get_values(min: int, max: int, step: int, dtype) -> Union[List[int], List[float]]:
     if dtype == int:
         _values = np.arange(start=min, stop=max + step, step=step, dtype=int)
         values = _values.tolist()
@@ -105,20 +104,22 @@ if __name__ == '__main__':
     parser.add_argument('--model_name', default='Unet', type=str, help='Unet, Unet++, DeepLabV3, DeepLabV3+, FPN, Linknet, PSPNet or PAN')
     parser.add_argument('--encoder_name', default='resnet18', type=str)
     parser.add_argument('--encoder_weights', default='imagenet', type=str, help='imagenet, ssl or swsl')
-    parser.add_argument('--batch_size', default=8, type=int)
+    parser.add_argument('--batch_size', default=4, type=int)
     parser.add_argument('--loss', default='Dice', type=str, help='Dice, Jaccard, BCE or BCE_with_logits')
     parser.add_argument('--optimizer', default='Adam', type=str, help='SGD, Adam, AdamW, RMSprop, Adam_amsgrad or AdamW_amsgrad')
-    parser.add_argument('--epochs', default=10, type=int)
+    parser.add_argument('--es_patience', default=12, type=int)
+    parser.add_argument('--es_min_delta', default=0.01, type=float)
     parser.add_argument('--monitor_metric', default='fscore', type=str)
+    parser.add_argument('--epochs', default=24, type=int)
     parser.add_argument('--wandb_project_name', default='temp', type=str)
     parser.add_argument('--wandb_api_key', default='b45cbe889f5dc79d1e9a0c54013e6ab8e8afb871', type=str)
     args = parser.parse_args()
 
     # Used only for debugging
     args.excluded_datasets = [
-        # 'covid-chestxray-dataset',
-        # 'COVID-19-Radiography-Database',
-        # 'Figure1-COVID-chestxray-dataset',
+        'covid-chestxray-dataset',
+        'COVID-19-Radiography-Database',
+        'Figure1-COVID-chestxray-dataset',
         'rsna_normal',
         'chest_xray_normal'
     ]
@@ -137,14 +138,17 @@ if __name__ == '__main__':
     else:
         print('W&B project name: {:s}'.format(args.wandb_project_name))
 
+    goal = 'minimize' if 'loss' in args.monitor_metric else 'maximize'
+
     os.environ['WANDB_API_KEY'] = args.wandb_api_key
-    os.environ['WANDB_SILENT'] = "true"
+    os.environ['WANDB_SILENT'] = "false"
     os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+
     sweep_config = {
         'method': args.tuning_method,
-        'metric': {'name': 'val_fscore', 'goal': 'maximize'},
-        # 'early_terminate': {'type': 'hyperband', 's': 2, 'eta': 3, 'max_iter': 81},
-        # 'early_terminate': {'type': 'hyperband', 'min_iter': 2},
+        'metric': {'name': 'val/{:s}'.format(args.monitor_metric), 'goal': goal},
+        'early_terminate': {'type': 'hyperband', 's': 3, 'eta': 2, 'max_iter': 24},           # 12 (24/2), 6 (24/2/2), 3 (24/2/2/2),
+        # 'early_terminate': {'type': 'hyperband', 'min_iter': 2, 'eta': 2},                  # 2, 4, 8, 16, 32 ...
         'parameters': {
             # Constant hyperparameters
             'dataset_dir': {'value': args.dataset_dir},
@@ -166,8 +170,8 @@ if __name__ == '__main__':
             # 'optimizer': {'values': ['Adam_amsgrad']},
             'lr': {'values': [1e-2, 1e-3, 1e-4]},
             # 'lr': {'values': [1e-3]},
-            'encoder_name': {'values': ['vgg19_bn']}
-            # 'encoder_name': {'values': ['resnet18',
+            # 'encoder_name': {'values': ['vgg19_bn']}
+            'encoder_name': {'values': ['resnet18',
                                         # 'resnet34', 'resnet50', 'resnet101',                            # ResNet
                                         # 'resnext50_32x4d',                                              # ResNeXt
                                         # 'timm-resnest14d', 'timm-resnest26d', 'timm-resnest50d',        # ResNeSt
@@ -179,7 +183,7 @@ if __name__ == '__main__':
                                         # 'mobilenet_v2',                                                 # MobileNet
                                         # 'dpn68', 'dpn92', 'dpn98',                                      # DPN
                                         # 'vgg13_bn', 'vgg16_bn', 'vgg19_bn'                              # VGG
-                                        # ]}
+                                        ]}
         }
     }
 
