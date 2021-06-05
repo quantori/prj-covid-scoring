@@ -8,8 +8,8 @@ import numpy as np
 import albumentations as A
 import segmentation_models_pytorch as smp
 
-from tools.data_processing_tools import log_datasets_files
 from tools.utils import EarlyStopping
+from tools.data_processing_tools import log_datasets_files
 
 
 # TODO: think of adding more augmentation transformations such as Cutout, Grid Mask, MixUp, CutMix, Cutout, Mosaic
@@ -37,7 +37,6 @@ class SegmentationModel:
                  loss: str = 'Dice',
                  optimizer: str = 'AdamW',
                  lr: float = 0.0001,
-                 es_mode: str = None,
                  es_patience: int = None,
                  es_min_delta: float = 0,
                  monitor_metric: str = 'fscore',
@@ -50,6 +49,9 @@ class SegmentationModel:
         # Dataset settings
         self.augmentation_params = augmentation_params
         self.input_size = (input_size, input_size) if isinstance(input_size, int) else input_size
+
+        # Device settings
+        self.device = self.device_selection()
 
         # Model settings
         self.model_name = model_name
@@ -64,7 +66,6 @@ class SegmentationModel:
         self.loss = loss
         self.optimizer = optimizer
         self.lr = lr
-        self.es_mode = es_mode
         self.es_patience = es_patience
         self.es_min_delta = es_min_delta
         self.monitor_metric = monitor_metric
@@ -93,11 +94,10 @@ class SegmentationModel:
             'loss': self.loss,
             'optimizer': self.optimizer,
             'lr': self.lr,
-            'monitor_metric': self.monitor_metric,
-            'device': self.device,
-            'es_mode': self.es_mode,
             'es_patience': self.es_patience,
-            'es_min_delta': self.es_min_delta
+            'es_min_delta': self.es_min_delta,
+            'monitor_metric': self.monitor_metric,
+            'device': self.device
         }
         return hyperparameters
 
@@ -319,30 +319,28 @@ class SegmentationModel:
               test_loader: torch.utils.data.dataloader.DataLoader,
               logging_loader: torch.utils.data.dataloader.DataLoader = None) -> None:
 
-        self.device = self.device_selection()
         self.print_model_settings()
         os.makedirs(self.model_dir) if not os.path.exists(self.model_dir) else False
 
         model = self.get_model()
+        # TODO: add parameters calculation
+        # pytorch_total_params = sum(p.numel() for p in model.parameters())
+        # pytorch_total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+
         # Used for viewing the model architecture. It doesn't work for all solutions
         # torch.onnx.export(model,
         #                   torch.randn(self.batch_size, self.in_channels, self.input_size[0], self.input_size[1], requires_grad=True),
         #                   os.path.join(self.model_dir, 'model.onnx'),
         #                   verbose=True)
         optimizer = self.build_optimizer(model=model, optimizer=self.optimizer, lr=self.lr)
+        loss = self.build_loss(loss=self.loss)
+
         # Use self.find_lr once in order to find LR boundaries
         # self.find_lr(model=model, optimizer=optimizer, criterion=loss, train_loader=train_loader, val_loader=val_loader)
-        # For the training based on CLR, optimizer must support momentum with `cycle_momentum` option enabled
-        # LR overview: https://www.kaggle.com/isbhargav/guide-to-pytorch-learning-rate-scheduling
 
-        loss = self.build_loss(loss=self.loss)
-        es = EarlyStopping(model=model,
-                           monitor_metric=self.monitor_metric,
-                           mode=self.es_mode,
-                           patience=self.es_patience,
-                           min_delta=self.es_min_delta
-                           )
-
+        es_callback = EarlyStopping(monitor_metric=self.monitor_metric,
+                                    patience=self.es_patience,
+                                    min_delta=self.es_min_delta)
         metrics = [smp.utils.metrics.Fscore(threshold=0.5),
                    smp.utils.metrics.IoU(threshold=0.5),
                    smp.utils.metrics.Accuracy(threshold=0.5),
@@ -365,9 +363,9 @@ class SegmentationModel:
                              config=hyperparameters, tags=[self.model_name, self.encoder_name, self.encoder_weights])
             log_datasets_files(run, [train_loader, val_loader, test_loader], artefact_name=self.class_name)
 
-        best_train_score = 0
-        best_val_score = 0
-        best_test_score = 0
+        best_train_score, mode = (np.inf, 'min') if 'loss' in self.monitor_metric else (-np.inf, 'max')
+        best_val_score, mode = (np.inf, 'min') if 'loss' in self.monitor_metric else (-np.inf, 'max')
+        best_test_score, mode = (np.inf, 'min') if 'loss' in self.monitor_metric else (-np.inf, 'max')
         for epoch in range(0, self.epochs):
             print('\nEpoch: {:03d}, LR: {:.5f}'.format(epoch, optimizer.param_groups[0]['lr']))
 
@@ -378,12 +376,14 @@ class SegmentationModel:
             val_logs = self._change_loss_name(metrics=val_logs, search_pattern='loss')
             test_logs = self._change_loss_name(metrics=test_logs, search_pattern='loss')
 
-            if best_train_score < train_logs[self.monitor_metric]:
+            if (best_train_score < train_logs[self.monitor_metric] and mode == 'max') or \
+                    (best_train_score > train_logs[self.monitor_metric] and mode == 'min'):
                 best_train_score = train_logs[self.monitor_metric]
                 wandb.log(data={'best/train_score': best_train_score, 'best/train_epoch': epoch}, commit=False)
 
             if bool(val_logs):
-                if best_val_score < val_logs[self.monitor_metric]:
+                if (best_val_score < val_logs[self.monitor_metric] and mode == 'max') or \
+                        (best_val_score > val_logs[self.monitor_metric] and mode == 'min'):
                     best_val_score = val_logs[self.monitor_metric]
                     wandb.log(data={'best/val_score': best_val_score, 'best/val_epoch': epoch}, commit=False)
                     best_weights_path = os.path.join(self.model_dir, 'best_weights.pth')
@@ -391,7 +391,8 @@ class SegmentationModel:
                     print('Best weights are saved to {:s}'.format(best_weights_path))
 
             if bool(test_logs):
-                if best_test_score < test_logs[self.monitor_metric]:
+                if (best_test_score < test_logs[self.monitor_metric] and mode == 'max') or \
+                        (best_test_score > test_logs[self.monitor_metric] and mode == 'min'):
                     best_test_score = test_logs[self.monitor_metric]
                     wandb.log(data={'best/test_score': best_test_score, 'best/test_epoch': epoch}, commit=False)
 
@@ -399,8 +400,13 @@ class SegmentationModel:
             masks, maps = self._get_log_images(model, logging_loader)
             wandb.log(data=metrics, commit=False)
             wandb.log(data={'Segmentation masks': masks, 'Probability maps': maps})
-            es(train_logs, model)
-            if es.early_stop:
+
+            es_callback(val_logs)
+            if es_callback.early_stop:
+                print('\nStopping by Early Stopping criteria: '
+                      'metric = {:s}, patience = {:d}, min_delta = {:.2f}, '.format(self.monitor_metric,
+                                                                                    self.es_patience,
+                                                                                    self.es_min_delta))
                 break
 
 
@@ -415,6 +421,8 @@ class TuningModel(SegmentationModel):
                  class_name: str = 'COVID-19',
                  loss: str = 'Dice',
                  optimizer: str = 'AdamW',
+                 es_patience: int = None,
+                 es_min_delta: float = 0,
                  lr: float = 0.0001,
                  monitor_metric: str = 'fscore'):
         super().__init__()
@@ -428,7 +436,10 @@ class TuningModel(SegmentationModel):
         self.loss = loss
         self.optimizer = optimizer
         self.lr = lr
+        self.es_patience = es_patience
+        self.es_min_delta = es_min_delta
         self.monitor_metric = monitor_metric
+        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
     def train(self,
               train_loader: torch.utils.data.dataloader.DataLoader,
@@ -436,10 +447,15 @@ class TuningModel(SegmentationModel):
               test_loader: torch.utils.data.dataloader.DataLoader,
               logging_loader: torch.utils.data.dataloader.DataLoader = None) -> None:
 
-        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         model = self.get_model()
+        # TODO: add parameters calculation
+        # pytorch_total_params = sum(p.numel() for p in model.parameters())
+        # pytorch_total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
         optimizer = self.build_optimizer(model=model, optimizer=self.optimizer, lr=self.lr)
         loss = self.build_loss(loss=self.loss)
+        es_callback = EarlyStopping(monitor_metric=self.monitor_metric,
+                                    patience=self.es_patience,
+                                    min_delta=self.es_min_delta)
         metrics = [smp.utils.metrics.Fscore(threshold=0.5),
                    smp.utils.metrics.IoU(threshold=0.5),
                    smp.utils.metrics.Accuracy(threshold=0.5),
@@ -449,9 +465,9 @@ class TuningModel(SegmentationModel):
         valid_epoch = smp.utils.train.ValidEpoch(model, loss=loss, metrics=metrics, stage_name='valid', device=self.device)
         test_epoch = smp.utils.train.ValidEpoch(model, loss=loss, metrics=metrics, stage_name='test', device=self.device)
 
-        best_train_score = 0
-        best_val_score = 0
-        best_test_score = 0
+        best_train_score, mode = (np.inf, 'min') if 'loss' in self.monitor_metric else (-np.inf, 'max')
+        best_val_score, mode = (np.inf, 'min') if 'loss' in self.monitor_metric else (-np.inf, 'max')
+        best_test_score, mode = (np.inf, 'min') if 'loss' in self.monitor_metric else (-np.inf, 'max')
         for epoch in range(0, self.epochs):
             print('\nEpoch: {:03d}, LR: {:.5f}'.format(epoch, optimizer.param_groups[0]['lr']))
 
@@ -462,19 +478,30 @@ class TuningModel(SegmentationModel):
             val_logs = self._change_loss_name(metrics=val_logs, search_pattern='loss')
             test_logs = self._change_loss_name(metrics=test_logs, search_pattern='loss')
 
-            if best_train_score < train_logs[self.monitor_metric]:
+            if (best_train_score < train_logs[self.monitor_metric] and mode == 'max') or \
+                    (best_train_score > train_logs[self.monitor_metric] and mode == 'min'):
                 best_train_score = train_logs[self.monitor_metric]
                 wandb.log(data={'best/train_score': best_train_score, 'best/train_epoch': epoch}, commit=False)
 
             if bool(val_logs):
-                if best_val_score < val_logs[self.monitor_metric]:
+                if (best_val_score < val_logs[self.monitor_metric] and mode == 'max') or \
+                        (best_val_score > val_logs[self.monitor_metric] and mode == 'min'):
                     best_val_score = val_logs[self.monitor_metric]
                     wandb.log(data={'best/val_score': best_val_score, 'best/val_epoch': epoch}, commit=False)
 
             if bool(test_logs):
-                if best_test_score < test_logs[self.monitor_metric]:
+                if (best_test_score < test_logs[self.monitor_metric] and mode == 'max') or \
+                        (best_test_score > test_logs[self.monitor_metric] and mode == 'min'):
                     best_test_score = test_logs[self.monitor_metric]
                     wandb.log(data={'best/test_score': best_test_score, 'best/test_epoch': epoch}, commit=False)
 
             metrics = self._get_log_metrics(train_logs, val_logs, test_logs)
             wandb.log(data=metrics)
+
+            es_callback(val_logs)
+            if es_callback.early_stop:
+                print('\nStopping by Early Stopping criteria: '
+                      'metric = {:s}, patience = {:d}, min_delta = {:.2f}, '.format(self.monitor_metric,
+                                                                                    self.es_patience,
+                                                                                    self.es_min_delta))
+                break
