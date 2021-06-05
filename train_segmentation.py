@@ -35,8 +35,7 @@ def main(args):
                                       transform_params=preprocessing_params)
         datasets[subset_name] = dataset
 
-    # If debug is frozen, use num_workers = 0
-    num_workers = 8 * device_count()
+    num_workers = 8 * device_count()            # If debug is frozen, use num_workers = 0
     train_loader = DataLoader(datasets['train'], batch_size=args.batch_size, num_workers=num_workers)
     val_loader = DataLoader(datasets['val'], batch_size=args.batch_size, num_workers=num_workers)
     test_loader = DataLoader(datasets['test'], batch_size=args.batch_size, num_workers=num_workers)
@@ -63,11 +62,10 @@ def main(args):
                               loss=args.loss,
                               optimizer=args.optimizer,
                               lr=args.lr,
-                              es_mode=args.es_mode,
-                              es_min_delta=args.es_min_delta,
                               es_patience=args.es_patience,
-                              input_size=args.input_size,
+                              es_min_delta=args.es_min_delta,
                               monitor_metric=args.monitor_metric,
+                              input_size=args.input_size,
                               save_dir=args.save_dir,
                               logging_labels=covid_segmentation_labels([args.class_name]),
                               wandb_project_name=args.wandb_project_name,
@@ -89,12 +87,10 @@ if __name__ == '__main__':
     parser.add_argument('--loss', default='Dice', type=str, help='Dice, Jaccard, BCE or BCEL')
     parser.add_argument('--optimizer', default='Adam', type=str, help='SGD, Adam, AdamW, RMSprop, Adam_amsgrad or AdamW_amsgrad')
     parser.add_argument('--lr', default=0.001, type=float)
-    parser.add_argument('--es_mode', default='max', type=str)
-    parser.add_argument('--es_min_delta', default=0.001, type=float)
     parser.add_argument('--es_patience', default=10, type=int)
-
-    parser.add_argument('--epochs', default=2, type=int)
+    parser.add_argument('--es_min_delta', default=0.01, type=float)
     parser.add_argument('--monitor_metric', default='fscore', type=str)
+    parser.add_argument('--epochs', default=20, type=int)
     parser.add_argument('--save_dir', default='models', type=str)
     parser.add_argument('--wandb_project_name', default=None, type=str)
     parser.add_argument('--wandb_api_key', default='b45cbe889f5dc79d1e9a0c54013e6ab8e8afb871', type=str)
@@ -102,9 +98,9 @@ if __name__ == '__main__':
 
     # Used only for debugging
     args.excluded_datasets = [
-        # 'covid-chestxray-dataset',
-        # 'COVID-19-Radiography-Database',
-        # 'Figure1-COVID-chestxray-dataset',
+        'covid-chestxray-dataset',
+        'COVID-19-Radiography-Database',
+        'Figure1-COVID-chestxray-dataset',
         'rsna_normal',
         'chest_xray_normal'
     ]
@@ -121,6 +117,6 @@ if __name__ == '__main__':
     elif not isinstance(args.wandb_project_name, str) and args.class_name == 'Lungs':
         args.wandb_project_name = 'lungs_segmentation'
     else:
-        print('W&B project name: {:s}'.format(args.wandb_project_name))
+        print('\nW&B project name: {:s}'.format(args.wandb_project_name))
 
     main(args)
