@@ -27,6 +27,14 @@ def main(config=None):
                                                                        included_datasets=config.included_datasets,
                                                                        excluded_datasets=config.excluded_datasets)
 
+        if args.data_fraction_used < 1:
+            assert 0 < args.data_fraction_used <= 1, 'Fraction of used data should be in range (0; 1]'
+            import random
+            data_fraction_remove = 1 - args.data_fraction_used
+            indexes_exclude = set(random.sample(list(range(len(img_paths))), int(data_fraction_remove * len(img_paths))))
+            img_paths = [n for idx, n in enumerate(img_paths) if idx not in indexes_exclude]
+            ann_paths = [n for idx, n in enumerate(ann_paths) if idx not in indexes_exclude]
+
         subsets = split_data(img_paths=img_paths,
                              ann_paths=ann_paths,
                              dataset_names=dataset_names,
@@ -94,35 +102,30 @@ def get_values(min: int, max: int, step: int, dtype) -> Union[List[int], List[fl
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='Tuning pipeline')
-    parser.add_argument('--dataset_dir', default='dataset/covid_segmentation', type=str, help='dataset/covid_segmentation or dataset/lungs_segmentation')
+    parser.add_argument('--dataset_dir', default='dataset/lungs_segmentation', type=str, help='dataset/covid_segmentation or dataset/lungs_segmentation')
     parser.add_argument('--included_datasets', default=None, type=str)
     parser.add_argument('--excluded_datasets', default=None, type=str)
-    parser.add_argument('--ratio', nargs='+', default=(0.9, 0.1, 0.0), type=float, help='train, val, and test sizes')
+    parser.add_argument('--data_fraction_used', default=0.2, type=float)
+    parser.add_argument('--ratio', nargs='+', default=(0.8, 0.2, 0.0), type=float, help='(train_size, val_size, test_size)')
     parser.add_argument('--tuning_method', default='random', type=str, help='grid, random, bayes')
-    parser.add_argument('--max_runs', default=50, type=int, help='number of trials to run')
-    parser.add_argument('--input_size', nargs='+', default=(512, 512), type=int)
-    parser.add_argument('--model_name', default='Unet', type=str, help='Unet, Unet++, DeepLabV3, DeepLabV3+, FPN, Linknet, PSPNet or PAN')
-    parser.add_argument('--encoder_name', default='resnet18', type=str)
-    parser.add_argument('--encoder_weights', default='imagenet', type=str, help='imagenet, ssl or swsl')
+    parser.add_argument('--max_runs', default=500, type=int, help='number of trials to run')
     parser.add_argument('--batch_size', default=4, type=int)
-    parser.add_argument('--loss', default='Dice', type=str, help='Dice, Jaccard, BCE or BCE_with_logits')
-    parser.add_argument('--optimizer', default='Adam', type=str, help='SGD, Adam, AdamW, RMSprop, Adam_amsgrad or AdamW_amsgrad')
     parser.add_argument('--es_patience', default=12, type=int)
     parser.add_argument('--es_min_delta', default=0.01, type=float)
     parser.add_argument('--monitor_metric', default='fscore', type=str)
     parser.add_argument('--epochs', default=24, type=int)
-    parser.add_argument('--wandb_project_name', default='temp', type=str)
+    parser.add_argument('--wandb_project_name', default=None, type=str)
     parser.add_argument('--wandb_api_key', default='b45cbe889f5dc79d1e9a0c54013e6ab8e8afb871', type=str)
     args = parser.parse_args()
 
     # Used only for debugging
-    args.excluded_datasets = [
-        'covid-chestxray-dataset',
-        'COVID-19-Radiography-Database',
-        'Figure1-COVID-chestxray-dataset',
-        'rsna_normal',
-        'chest_xray_normal'
-    ]
+    # args.excluded_datasets = [
+    #     'covid-chestxray-dataset',
+    #     'COVID-19-Radiography-Database',
+    #     'Figure1-COVID-chestxray-dataset',
+    #     'rsna_normal',
+    #     'chest_xray_normal'
+    # ]
 
     if 'covid' in args.dataset_dir:
         args.class_name = 'COVID-19'
@@ -135,13 +138,12 @@ if __name__ == '__main__':
         args.wandb_project_name = 'covid_segmentation_tuning'
     elif not isinstance(args.wandb_project_name, str) and args.class_name == 'Lungs':
         args.wandb_project_name = 'lungs_segmentation_tuning'
-    else:
-        print('W&B project name: {:s}'.format(args.wandb_project_name))
+    print('\n\033[92m' + 'W&B project name: {:s}\n'.format(args.wandb_project_name) + '\033[0m')
 
     goal = 'minimize' if 'loss' in args.monitor_metric else 'maximize'
 
     os.environ['WANDB_API_KEY'] = args.wandb_api_key
-    os.environ['WANDB_SILENT'] = "false"
+    os.environ['WANDB_SILENT'] = "true"
     os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
     sweep_config = {
@@ -155,34 +157,34 @@ if __name__ == '__main__':
             'class_name': {'value': args.class_name},
             'included_datasets': {'value': args.included_datasets},
             'excluded_datasets': {'value': args.excluded_datasets},
-            'model_name': {'value': args.model_name},
-            'encoder_weights': {'value': args.encoder_weights},
+            'encoder_weights': {'value': 'imagenet'},                                         # Possible options: imagenet, ssl or sws
             'batch_size': {'value': args.batch_size},
             'epochs': {'value': args.epochs},
             'monitor_metric': {'value': args.monitor_metric},
 
             # Variable hyperparameters
+            'model_name': {'values': ['Unet', 'Unet++', 'DeepLabV3', 'DeepLabV3+', 'FPN', 'Linknet', 'PSPNet', 'PAN']},
+            # 'model_name': {'values': ['Unet']},
             'input_size': {'values': get_values(min=384, max=768, step=32, dtype=int)},
             # 'input_size': {'values': [512]},
             'loss': {'values': ['Dice', 'Jaccard', 'BCE', 'BCEL']},
             # 'loss': {'values': ['Dice']},
             'optimizer': {'values': ['SGD', 'RMSprop', 'Adam', 'AdamW', 'Adam_amsgrad', 'AdamW_amsgrad']},
             # 'optimizer': {'values': ['Adam_amsgrad']},
-            'lr': {'values': [1e-2, 1e-3, 1e-4]},
+            'lr': {'values': [0.01, 0.005, 0.001, 0.0005, 0.0001]},
             # 'lr': {'values': [1e-3]},
             # 'encoder_name': {'values': ['vgg19_bn']}
-            'encoder_name': {'values': ['resnet18',
-                                        # 'resnet34', 'resnet50', 'resnet101',                            # ResNet
-                                        # 'resnext50_32x4d',                                              # ResNeXt
-                                        # 'timm-resnest14d', 'timm-resnest26d', 'timm-resnest50d',        # ResNeSt
-                                        # 'timm-regnetx_008', 'timm-regnetx_032', 'timm-regnetx_064',     # RegNet(x/y)
-                                        # 'se_resnet50', 'se_resnext50_32x4d', 'se_resnext101_32x4d',     # SE-Net
-                                        # 'densenet121', 'densenet161', 'densenet201', 'densenet161',     # DenseNet
-                                        # 'xception', 'inceptionv4',                                      # Inception
-                                        # 'efficientnet-b0', 'efficientnet-b1', 'efficientnet-b2',        # EfficientNet
-                                        # 'mobilenet_v2',                                                 # MobileNet
-                                        # 'dpn68', 'dpn92', 'dpn98',                                      # DPN
-                                        # 'vgg13_bn', 'vgg16_bn', 'vgg19_bn'                              # VGG
+            'encoder_name': {'values': ['resnet18', 'resnet34', 'resnet50', 'resnet101',                # ResNet
+                                        'resnext50_32x4d',                                              # ResNeXt
+                                        'timm-resnest14d', 'timm-resnest26d', 'timm-resnest50d',        # ResNeSt
+                                        'timm-regnetx_008', 'timm-regnetx_032', 'timm-regnetx_064',     # RegNet(x/y)
+                                        'se_resnet50', 'se_resnext50_32x4d', 'se_resnext101_32x4d',     # SE-Net
+                                        'densenet121', 'densenet161', 'densenet201', 'densenet161',     # DenseNet
+                                        'xception', 'inceptionv4',                                      # Inception
+                                        'efficientnet-b0', 'efficientnet-b1', 'efficientnet-b2',        # EfficientNet
+                                        'mobilenet_v2',                                                 # MobileNet
+                                        'dpn68', 'dpn92', 'dpn98',                                      # DPN
+                                        'vgg13_bn', 'vgg16_bn', 'vgg19_bn'                              # VGG
                                         ]}
         }
     }
