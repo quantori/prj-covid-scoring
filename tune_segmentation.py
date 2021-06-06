@@ -110,10 +110,10 @@ if __name__ == '__main__':
     parser.add_argument('--tuning_method', default='random', type=str, help='grid, random, bayes')
     parser.add_argument('--max_runs', default=500, type=int, help='number of trials to run')
     parser.add_argument('--batch_size', default=4, type=int)
-    parser.add_argument('--es_patience', default=12, type=int)
+    parser.add_argument('--es_patience', default=6, type=int)
     parser.add_argument('--es_min_delta', default=0.01, type=float)
     parser.add_argument('--monitor_metric', default='fscore', type=str)
-    parser.add_argument('--epochs', default=24, type=int)
+    parser.add_argument('--epochs', default=16, type=int)
     parser.add_argument('--wandb_project_name', default=None, type=str)
     parser.add_argument('--wandb_api_key', default='b45cbe889f5dc79d1e9a0c54013e6ab8e8afb871', type=str)
     args = parser.parse_args()
@@ -149,7 +149,7 @@ if __name__ == '__main__':
     sweep_config = {
         'method': args.tuning_method,
         'metric': {'name': 'val/{:s}'.format(args.monitor_metric), 'goal': goal},
-        'early_terminate': {'type': 'hyperband', 's': 3, 'eta': 2, 'max_iter': 24},           # 12 (24/2), 6 (24/2/2), 3 (24/2/2/2),
+        'early_terminate': {'type': 'hyperband', 's': 2, 'eta': 2, 'max_iter': 16},           # 8 (16/2), 4 (16/2/2)
         # 'early_terminate': {'type': 'hyperband', 'min_iter': 2, 'eta': 2},                  # 2, 4, 8, 16, 32 ...
         'parameters': {
             # Constant hyperparameters
