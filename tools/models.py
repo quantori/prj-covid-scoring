@@ -112,6 +112,18 @@ class SegmentationModel:
         return metrics
 
     @staticmethod
+    def _get_log_params(model: Any, img_height: int, img_width: int, img_channels: int) -> Dict[str, float]:
+        from ptflops import get_model_complexity_info
+        _macs, _params = get_model_complexity_info(model, (img_channels, img_height, img_width),
+                                                   as_strings=False, print_per_layer_stat=False, verbose=False)
+        macs = round(_macs / 10. ** 9, 1)
+        params = round(_params / 10.**6, 1)
+        # total_params = sum(p.numel() for p in model.parameters())
+        # trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        params = {'params': params, 'macs': macs}
+        return params
+
+    @staticmethod
     def _get_log_metrics(train_logs: Dict[str, float],
                          val_logs: Dict[str, float],
                          test_logs: Dict[str, float],
@@ -323,10 +335,6 @@ class SegmentationModel:
         os.makedirs(self.model_dir) if not os.path.exists(self.model_dir) else False
 
         model = self.get_model()
-        # TODO: add parameters calculation
-        # pytorch_total_params = sum(p.numel() for p in model.parameters())
-        # pytorch_total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-
         # Used for viewing the model architecture. It doesn't work for all solutions
         # torch.onnx.export(model,
         #                   torch.randn(self.batch_size, self.in_channels, self.input_size[0], self.input_size[1], requires_grad=True),
@@ -362,6 +370,9 @@ class SegmentationModel:
             run = wandb.init(project=self.wandb_project_name, entity='viacheslav_danilov', name=self.run_name,
                              config=hyperparameters, tags=[self.model_name, self.encoder_name, self.encoder_weights])
             log_datasets_files(run, [train_loader, val_loader, test_loader], artefact_name=self.class_name)
+
+        params = self._get_log_params(model, img_height=self.input_size[0], img_width=self.input_size[1], img_channels=self.in_channels)
+        wandb.log(data=params, commit=False)
 
         best_train_score, mode = (np.inf, 'min') if 'loss' in self.monitor_metric else (-np.inf, 'max')
         best_val_score, mode = (np.inf, 'min') if 'loss' in self.monitor_metric else (-np.inf, 'max')
@@ -448,9 +459,6 @@ class TuningModel(SegmentationModel):
               logging_loader: torch.utils.data.dataloader.DataLoader = None) -> None:
 
         model = self.get_model()
-        # TODO: add parameters calculation
-        # pytorch_total_params = sum(p.numel() for p in model.parameters())
-        # pytorch_total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
         optimizer = self.build_optimizer(model=model, optimizer=self.optimizer, lr=self.lr)
         loss = self.build_loss(loss=self.loss)
         es_callback = EarlyStopping(monitor_metric=self.monitor_metric,
@@ -464,6 +472,9 @@ class TuningModel(SegmentationModel):
         train_epoch = smp.utils.train.TrainEpoch(model, loss=loss, metrics=metrics, optimizer=optimizer, device=self.device)
         valid_epoch = smp.utils.train.ValidEpoch(model, loss=loss, metrics=metrics, stage_name='valid', device=self.device)
         test_epoch = smp.utils.train.ValidEpoch(model, loss=loss, metrics=metrics, stage_name='test', device=self.device)
+
+        params = self._get_log_params(model, img_height=self.input_size[0], img_width=self.input_size[1], img_channels=self.in_channels)
+        wandb.log(data=params, commit=False)
 
         best_train_score, mode = (np.inf, 'min') if 'loss' in self.monitor_metric else (-np.inf, 'max')
         best_val_score, mode = (np.inf, 'min') if 'loss' in self.monitor_metric else (-np.inf, 'max')
