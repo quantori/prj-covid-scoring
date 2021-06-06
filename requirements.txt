@@ -81,8 +81,8 @@ subprocess32==3.5.4
 threadpoolctl==2.1.0
 tifffile
 timm==0.3.2
-torch==1.8.1
-torchvision==0.9.1
+torch==1.7.1
+torchvision==0.8.2
 tqdm==4.61.0
 typing-extensions==3.10.0.0
 urllib3==1.26.5
@@ -90,4 +90,5 @@ wandb==0.10.31
 websocket-client==1.0.1
 Werkzeug==2.0.1
 zipp==3.4.1
-
+torch-lr-finder==0.2.1
+ptflops==0.6.5
