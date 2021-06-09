@@ -349,14 +349,17 @@ class SegmentationModel:
         es_callback = EarlyStopping(monitor_metric=self.monitor_metric,
                                     patience=self.es_patience,
                                     min_delta=self.es_min_delta)
+
         metrics = [smp.utils.metrics.Fscore(threshold=0.5),
                    smp.utils.metrics.IoU(threshold=0.5),
                    smp.utils.metrics.Accuracy(threshold=0.5),
                    smp.utils.metrics.Precision(threshold=0.5),
                    smp.utils.metrics.Recall(threshold=0.5)]
         train_epoch = smp.utils.train.TrainEpoch(model, loss=loss, metrics=metrics, optimizer=optimizer, device=self.device)
-        valid_epoch = smp.utils.train.ValidEpoch(model, loss=loss, metrics=metrics, stage_name='valid', device=self.device)
-        test_epoch = smp.utils.train.ValidEpoch(model, loss=loss, metrics=metrics, stage_name='test', device=self.device)
+        valid_epoch = smp.utils.train.ValidEpoch(model, loss=loss, metrics=metrics, device=self.device)
+        test_epoch = smp.utils.train.ValidEpoch(model, loss=loss, metrics=metrics,  device=self.device)
+        valid_epoch.stage_name = 'valid'
+        test_epoch.stage_name = 'test'
 
         # Initialize W&B
         if not self.wandb_api_key is None:
@@ -379,7 +382,6 @@ class SegmentationModel:
         best_test_score, mode = (np.inf, 'min') if 'loss' in self.monitor_metric else (-np.inf, 'max')
         for epoch in range(0, self.epochs):
             print('\nEpoch: {:03d}, LR: {:.5f}'.format(epoch, optimizer.param_groups[0]['lr']))
-
             train_logs = train_epoch.run(train_loader)
             val_logs = valid_epoch.run(val_loader)
             test_logs = test_epoch.run(test_loader)
@@ -470,8 +472,11 @@ class TuningModel(SegmentationModel):
                    smp.utils.metrics.Precision(threshold=0.5),
                    smp.utils.metrics.Recall(threshold=0.5)]
         train_epoch = smp.utils.train.TrainEpoch(model, loss=loss, metrics=metrics, optimizer=optimizer, device=self.device)
-        valid_epoch = smp.utils.train.ValidEpoch(model, loss=loss, metrics=metrics, stage_name='valid', device=self.device)
-        test_epoch = smp.utils.train.ValidEpoch(model, loss=loss, metrics=metrics, stage_name='test', device=self.device)
+        valid_epoch = smp.utils.train.ValidEpoch(model, loss=loss, metrics=metrics, device=self.device)
+        test_epoch = smp.utils.train.ValidEpoch(model, loss=loss, metrics=metrics, device=self.device)
+
+        valid_epoch.stage_name = 'valid'
+        test_epoch.stage_name = 'test'
 
         params = self._get_log_params(model, img_height=self.input_size[0], img_width=self.input_size[1], img_channels=self.in_channels)
         wandb.log(data=params, commit=False)

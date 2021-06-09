@@ -39,6 +39,7 @@ multiprocess==0.70.11.1
 munch==2.5.0
 networkx==2.5.1
 numpy
+py-cpuinfo
 opencv-python==3.4.14.51
 opencv-python-headless==4.5.2.52
 packaging==20.9
@@ -46,6 +47,7 @@ pandas
 pascal-voc-writer==0.1.4
 pathos==0.2.7
 pathtools==0.1.2
+ptflops
 Pillow==8.2.0
 plotly
 pox==0.2.9

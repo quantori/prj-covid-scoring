@@ -1,0 +1,10 @@
+script: tune_segmentation.py
+hyperparameters:
+  epochs: 30
+  batch_size: 10
+inputs:
+  covid_dataset_dir: s3://qtr-ml-projects/prj-covid-scoring/dataset/covid_segmentation/
+  logging_dir: s3://qtr-ml-projects/prj-covid-scoring/dataset/covid_segmentation_logging/
+dependencies:
+   - tools
+   - requirements.txt

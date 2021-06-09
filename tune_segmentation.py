@@ -118,6 +118,10 @@ if __name__ == '__main__':
     parser.add_argument('--wandb_api_key', default='b45cbe889f5dc79d1e9a0c54013e6ab8e8afb871', type=str)
     args = parser.parse_args()
 
+    if not (os.environ.get('SM_CHANNEL_COVID_DATASET_DIR') is None):
+        args.dataset_dir = os.environ.get('SM_CHANNEL_COVID_DATASET_DIR')
+
+
     # Used only for debugging
     # args.excluded_datasets = [
     #     'covid-chestxray-dataset',

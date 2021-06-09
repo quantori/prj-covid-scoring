@@ -1,5 +1,5 @@
 import argparse
-
+import os
 from torch.cuda import device_count
 from torch.utils.data import DataLoader
 import segmentation_models_pytorch as smp
@@ -11,11 +11,9 @@ from tools.data_processing_tools import split_data, covid_segmentation_labels
 
 
 def main(args):
-
     img_paths, ann_paths, dataset_names = read_supervisely_project(sly_project_dir=args.dataset_dir,
                                                                    included_datasets=args.included_datasets,
                                                                    excluded_datasets=args.excluded_datasets)
-
     subsets = split_data(img_paths=img_paths,
                          ann_paths=ann_paths,
                          dataset_names=dataset_names,
@@ -40,7 +38,7 @@ def main(args):
     val_loader = DataLoader(datasets['val'], batch_size=args.batch_size, num_workers=num_workers)
     test_loader = DataLoader(datasets['test'], batch_size=args.batch_size, num_workers=num_workers)
 
-    logging_dir = args.dataset_dir + '_logging'
+    logging_dir = args.logging_dir
     # Use all images from the logging folder without exclusion
     img_paths_logging, ann_paths_logging, dataset_names_logging = read_supervisely_project(sly_project_dir=logging_dir,
                                                                                            included_datasets=None,
@@ -76,6 +74,8 @@ def main(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Segmentation pipeline')
     parser.add_argument('--dataset_dir', default='dataset/covid_segmentation', type=str, help='dataset/covid_segmentation or dataset/lungs_segmentation')
+    parser.add_argument('--logging_dir', default='dataset/covid_segmentation_logging', type=str)
+
     parser.add_argument('--included_datasets', default=None, type=str)
     parser.add_argument('--excluded_datasets', default=None, type=str)
     parser.add_argument('--ratio', nargs='+', default=(0.8, 0.1, 0.1), type=float, help='train, val, and test sizes')
@@ -95,7 +95,12 @@ if __name__ == '__main__':
     parser.add_argument('--wandb_project_name', default=None, type=str)
     parser.add_argument('--wandb_api_key', default='b45cbe889f5dc79d1e9a0c54013e6ab8e8afb871', type=str)
     args = parser.parse_args()
+    #print(os.environ.get('SM_CHANNEL_COVID_DATASET_DIR'))
+    if not (os.environ.get('SM_CHANNEL_COVID_DATASET_DIR') is None):
+        args.dataset_dir = os.environ.get('SM_CHANNEL_COVID_DATASET_DIR')
+        args.logging_dir = os.environ.get('SM_CHANNEL_LOGGING_DIR')
 
+    #print(args.dataset_dir)
     # Used only for debugging
     args.excluded_datasets = [
         'covid-chestxray-dataset',
