@@ -33,8 +33,8 @@ def main(config=None):
             assert 0 < args.data_fraction_used <= 1, 'Fraction of used data should be in range (0; 1]'
             random.seed(11)
             indexes_to_include = set(random.sample(list(range(len(img_paths))), int(args.data_fraction_used * len(img_paths))))
-            img_paths = [n for idx, n in enumerate(img_paths) if idx not in indexes_to_include]
-            ann_paths = [n for idx, n in enumerate(ann_paths) if idx not in indexes_to_include]
+            img_paths = [n for idx, n in enumerate(img_paths) if idx in indexes_to_include]
+            ann_paths = [n for idx, n in enumerate(ann_paths) if idx in indexes_to_include]
 
         subsets = split_data(img_paths=img_paths,
                              ann_paths=ann_paths,
