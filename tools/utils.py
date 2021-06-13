@@ -46,8 +46,8 @@ class EarlyStopping:
             else:
                 return False
 
-
-def binsearch(img, first, last, optimal_area):
+# TODO (David): Please use data type hints and better naming
+def binary_search(img, first, last, optimal_area):
     assert len(img.shape) == 2, 'invalid shape'
     best_value = None
     while first <= last:
@@ -62,17 +62,16 @@ def binsearch(img, first, last, optimal_area):
             last = mid - 1
     return best_value
 
-
+# TODO (David): Please use data type hints
 def separate_lungs(mask):
     assert np.max(mask) <= 1 and np.min(mask) >= 0, 'mask values should be in [0,1] scale, max {}' \
                                                     ' min {}'.format(np.max(mask),  np.min(mask))
     binary_map = (mask > 0.5).astype(np.uint8)
-    connectivity = 8
-    (numLabels, labels, stats, centroids) = cv2.connectedComponentsWithStats(binary_map, connectivity, cv2.CV_32S)
+    num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(binary_map, connectivity=8, ltype=cv2.CV_32S)
     centroids = centroids.astype(np.int32)
     lungs = []
 
-    if numLabels != 3:
+    if num_labels != 3:
         warnings.warn('there are more than 2 objects on binary image, this might create problem')
 
     for i in range(1, 3):
@@ -89,14 +88,14 @@ def separate_lungs(mask):
 
     return left_lung, right_lung
 
-
+# TODO (David): Please use data type hints
 def divide_lung(lung):
     rotated_lung = cv2.rotate(lung, cv2.ROTATE_90_CLOCKWISE)
 
     height, width = rotated_lung.shape
 
-    thr_1 = binsearch(rotated_lung.copy(), 0, width, np.sum(lung) // 3)
-    thr_2 = binsearch(rotated_lung.copy(), 0, width, 2 * np.sum(lung) // 3)
+    thr_1 = binary_search(rotated_lung.copy(), 0, width, np.sum(lung) // 3)
+    thr_2 = binary_search(rotated_lung.copy(), 0, width, 2 * np.sum(lung) // 3)
 
     pad_1 = np.pad(rotated_lung[:, :thr_1], [(0, 0), (0, width - thr_1)], mode='constant', constant_values=0)
     pad_2 = np.pad(rotated_lung[:, thr_1:thr_2], [(0, 0), (thr_1, width - thr_2)], mode='constant', constant_values=0)
