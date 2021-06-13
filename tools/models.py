@@ -9,7 +9,7 @@ import albumentations as A
 import segmentation_models_pytorch as smp
 
 from tools.data_processing_tools import log_datasets_files
-from tools.utils import EarlyStopping, divide_lung, separate_lungs          # TODO (David): divide_lung, separate_lungs
+from tools.utils import EarlyStopping, divide_lung, separate_lungs
 
 
 class SegmentationModel:
@@ -513,45 +513,35 @@ class TuningModel(SegmentationModel):
                 break
 
 
-# TODO (David): revise the code
 class CovidNet:
     def __init__(self,
-                 lung_segmentation,
-                 covid_segmentation,
-                 threshold: int,
-                 binary_search: Callable,
-                 separate_lungs: Callable,
-                 divide_lung: Callable):
-        super(CovidNet, self).__init__()
+                 lung_segmentation_model,
+                 covid_segmentation_model,
+                 threshold: float):
         assert 0 <= threshold <= 1, 'threshold is in incorrect scale, should be in [0,1]'
-        self.lung_segmentation = lung_segmentation
-        self.covid_segmentation = covid_segmentation
-        self.binary_search = binary_search
-        self.separate_lungs = separate_lungs
-        self.divide_lung = divide_lung
+        self.lung_segmentation = lung_segmentation_model
+        self.covid_segmentation = covid_segmentation_model
         self.threshold = threshold
 
     def __call__(self, img):
         return self.predict(img)
 
     def predict(self, img):
-        assert img.shape == (1, 3, 512, 512), 'incorrect shape'     # TODO (David): What if we have not 512x512 images?
-        lungs = self.lung_segmentation(img)[0, 0, :, :].cpu().detach().numpy()
-        covid = self.covid_segmentation(img)[0, 0, :, :].cpu().detach().numpy()
+        assert img.shape[0:2] == (1, 3), 'incorrect shape'
+        lungs_predicted = self.lung_segmentation(img)[0, 0, :, :].cpu().detach().numpy()
+        covid_predicted = self.covid_segmentation(img)[0, 0, :, :].cpu().detach().numpy()
 
-        lungs = (lungs > 0.5).astype(np.uint8)
-        covid = (covid > 0.5).astype(np.uint8)
+        lungs_predicted = (lungs_predicted > 0.5).astype(np.uint8)
+        covid_predicted = (covid_predicted > 0.5).astype(np.uint8)
 
-        # TODO (David): it is gonna be self.method here. If so please test it
-        left_lung, right_lung = self.separate_lungs(lungs)
-        left_lung_1, left_lung_2, left_lung_3 = self.divide_lung(left_lung)
-        right_lung_1, right_lung_2, right_lung_3 = self.divide_lung(right_lung)
+        left_lung, right_lung = separate_lungs(lungs_predicted)
+        left_lung_1, left_lung_2, left_lung_3 = divide_lung(left_lung)
+        right_lung_1, right_lung_2, right_lung_3 = divide_lung(right_lung)
 
-        stacked = np.stack([left_lung_1, left_lung_2, left_lung_3, right_lung_1, right_lung_2, right_lung_3], axis=0)
-        covid_intersection_lung_parts = covid * stacked
+        lung_parts = np.stack([left_lung_1, left_lung_2, left_lung_3, right_lung_1, right_lung_2, right_lung_3], axis=0)
+        covid_intersection_lung_parts = covid_predicted * lung_parts
 
-        sum_of_lung_parts_areas = np.sum(stacked, axis=(1, 2))
+        sum_of_lung_parts_areas = np.sum(lung_parts, axis=(1, 2))
         sum_of_covid_intersected_ares = np.sum(covid_intersection_lung_parts, axis=(1, 2))
         calculated_score = np.sum(sum_of_covid_intersected_ares / sum_of_lung_parts_areas > self.threshold)
-
         return calculated_score

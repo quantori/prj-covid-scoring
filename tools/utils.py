@@ -46,24 +46,24 @@ class EarlyStopping:
             else:
                 return False
 
-# TODO (David): Please use data type hints and better naming
-def binary_search(img, first, last, optimal_area):
+
+def binary_search(img: np.array, threshold_start: int, threshold_end: int, optimal_area: float):
     assert len(img.shape) == 2, 'invalid shape'
     best_value = None
-    while first <= last:
-        mid = (first + last) // 2
+    while threshold_start <= threshold_end:
+        mid = (threshold_start + threshold_end) // 2
         cut_img = img[:, :mid]
         cut_img_area = np.sum(cut_img)
         best_value = mid
 
         if cut_img_area <= optimal_area:
-            first = mid + 1
+            threshold_start = mid + 1
         if cut_img_area > optimal_area:
-            last = mid - 1
+            threshold_end = mid - 1
     return best_value
 
-# TODO (David): Please use data type hints
-def separate_lungs(mask):
+
+def separate_lungs(mask: np.array):
     assert np.max(mask) <= 1 and np.min(mask) >= 0, 'mask values should be in [0,1] scale, max {}' \
                                                     ' min {}'.format(np.max(mask),  np.min(mask))
     binary_map = (mask > 0.5).astype(np.uint8)
@@ -85,13 +85,11 @@ def separate_lungs(mask):
         left_lung, right_lung = lungs[0]['lung'], lungs[1]['lung']
     else:
         right_lung, left_lung = lungs[0]['lung'], lungs[1]['lung']
-
     return left_lung, right_lung
 
-# TODO (David): Please use data type hints
-def divide_lung(lung):
-    rotated_lung = cv2.rotate(lung, cv2.ROTATE_90_CLOCKWISE)
 
+def divide_lung(lung: np.array):
+    rotated_lung = cv2.rotate(lung, cv2.ROTATE_90_CLOCKWISE)
     height, width = rotated_lung.shape
 
     thr_1 = binary_search(rotated_lung.copy(), 0, width, np.sum(lung) // 3)
