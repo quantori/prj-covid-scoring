@@ -1,5 +1,7 @@
 import os
+import gc
 import time
+import random
 import argparse
 from typing import List, Union
 
@@ -29,11 +31,10 @@ def main(config=None):
 
         if args.data_fraction_used < 1:
             assert 0 < args.data_fraction_used <= 1, 'Fraction of used data should be in range (0; 1]'
-            import random
-            data_fraction_remove = 1 - args.data_fraction_used
-            indexes_exclude = set(random.sample(list(range(len(img_paths))), int(data_fraction_remove * len(img_paths))))
-            img_paths = [n for idx, n in enumerate(img_paths) if idx not in indexes_exclude]
-            ann_paths = [n for idx, n in enumerate(ann_paths) if idx not in indexes_exclude]
+            random.seed(11)
+            indexes_to_include = set(random.sample(list(range(len(img_paths))), int(args.data_fraction_used * len(img_paths))))
+            img_paths = [n for idx, n in enumerate(img_paths) if idx not in indexes_to_include]
+            ann_paths = [n for idx, n in enumerate(ann_paths) if idx not in indexes_to_include]
 
         subsets = split_data(img_paths=img_paths,
                              ann_paths=ann_paths,
@@ -80,11 +81,19 @@ def main(config=None):
                             lr=config.lr)
 
         start = time.time()
-        model.train(train_loader, val_loader, test_loader, logging_loader=None)
+        try:
+            model.train(train_loader, val_loader, test_loader, logging_loader=None)
+        except Exception:
+            print('Run status: Error')
+        else:
+            print('Run status: Success')
+        finally:
+            print('Reset memory and clean garbage')
+            gc.collect()
+            torch.cuda.empty_cache()
         end = time.time()
         print('\033[92m' + '\n********** Run {:s} took {} **********\n'.format(run_name, convert_seconds_to_hms(end - start)) + '\033[0m')
-        del model
-        torch.cuda.empty_cache()
+        wandb.join()
 
 
 def get_values(min: int, max: int, step: int, dtype) -> Union[List[int], List[float]]:
@@ -165,7 +174,7 @@ if __name__ == '__main__':
             # Variable hyperparameters
             'model_name': {'values': ['Unet', 'Unet++', 'DeepLabV3', 'DeepLabV3+', 'FPN', 'Linknet', 'PSPNet', 'PAN']},
             # 'model_name': {'values': ['Unet']},
-            'input_size': {'values': get_values(min=384, max=768, step=32, dtype=int)},
+            'input_size': {'values': get_values(min=384, max=640, step=32, dtype=int)},
             # 'input_size': {'values': [512]},
             'loss': {'values': ['Dice', 'Jaccard', 'BCE', 'BCEL']},
             # 'loss': {'values': ['Dice']},
@@ -173,19 +182,17 @@ if __name__ == '__main__':
             # 'optimizer': {'values': ['Adam_amsgrad']},
             'lr': {'values': [0.01, 0.005, 0.001, 0.0005, 0.0001]},
             # 'lr': {'values': [1e-3]},
-            # 'encoder_name': {'values': ['vgg19_bn']}
-            'encoder_name': {'values': ['resnet18', 'resnet34', 'resnet50', 'resnet101',                # ResNet
-                                        'resnext50_32x4d',                                              # ResNeXt
-                                        'timm-resnest14d', 'timm-resnest26d', 'timm-resnest50d',        # ResNeSt
-                                        'timm-regnetx_008', 'timm-regnetx_032', 'timm-regnetx_064',     # RegNet(x/y)
-                                        'se_resnet50', 'se_resnext50_32x4d', 'se_resnext101_32x4d',     # SE-Net
-                                        'densenet121', 'densenet161', 'densenet201', 'densenet161',     # DenseNet
-                                        'xception', 'inceptionv4',                                      # Inception
+            # 'encoder_name': {'values': ['resnet18']}
+            'encoder_name': {'values': ['resnet50', 'resnet101',                                        # ResNet
+                                        'resnext50_32x4d', 'resnext101_32x8d',                          # ResNeXt
+                                        'timm-regnetx_032', 'timm-regnetx_064',                         # RegNet(x)
+                                        'timm-regnety_032', 'timm-regnety_064',                         # RegNet(y)
+                                        'se_resnet50', 'se_resnet101',                                  # SE-ResNet
+                                        'se_resnext50_32x4d', 'se_resnext101_32x4d',                    # SE-ResNeXt
                                         'efficientnet-b0', 'efficientnet-b1', 'efficientnet-b2',        # EfficientNet
                                         'mobilenet_v2',                                                 # MobileNet
-                                        'dpn68', 'dpn92', 'dpn98',                                      # DPN
-                                        'vgg13_bn', 'vgg16_bn', 'vgg19_bn'                              # VGG
-                                        ]}
+                                        'timm-skresnet34', 'timm-skresnext50_32x4d',                    # SK ResNet
+                                        'dpn68', 'dpn98']}                                              # DPN
         }
     }
 
