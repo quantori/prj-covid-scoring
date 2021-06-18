@@ -398,7 +398,9 @@ class SegmentationModel:
                     best_val_score = val_logs[self.monitor_metric]
                     wandb.log(data={'best/val_score': best_val_score, 'best/val_epoch': epoch}, commit=False)
                     best_weights_path = os.path.join(self.model_dir, 'best_weights.pth')
-                    torch.save(model, best_weights_path)
+                    torch.save(model.state_dict(), best_weights_path)
+                    torch.save(model.state_dict(), os.path.join(wandb.run.dir, "best_weights.pth"))
+
                     print('Best weights are saved to {:s}'.format(best_weights_path))
 
             if bool(test_logs):
@@ -419,6 +421,13 @@ class SegmentationModel:
                                                                                     self.es_patience,
                                                                                     self.es_min_delta))
                 break
+
+        if not self.wandb_api_key is None:
+            wandb.save(os.path.join(wandb.run.dir, "best_weights.pth"))
+
+            model_artefact = wandb.Artifact("model_artefact", type='model')
+            model_artefact.add_file(os.path.join(wandb.run.dir, "best_weights.pth"))
+            run.log_artifact(model_artefact)
 
 
 class TuningModel(SegmentationModel):
