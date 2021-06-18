@@ -1,7 +1,6 @@
 import argparse
 
 import albumentations as albu
-
 from torch.cuda import device_count
 from torch.utils.data import DataLoader
 import segmentation_models_pytorch as smp
@@ -13,12 +12,6 @@ from tools.data_processing_tools import split_data, covid_segmentation_labels
 
 
 def main(args):
-    augmentation_params = albu.Compose([
-        albu.Rotate(30),
-        albu.HorizontalFlip(p=0.5),
-        albu.RandomBrightnessContrast(p=0.2),
-    ])
-
     img_paths, ann_paths, dataset_names = read_supervisely_project(sly_project_dir=args.dataset_dir,
                                                                    included_datasets=args.included_datasets,
                                                                    excluded_datasets=args.excluded_datasets)
@@ -32,21 +25,48 @@ def main(args):
 
     preprocessing_params = smp.encoders.get_preprocessing_params(encoder_name=args.encoder_name,
                                                                  pretrained=args.encoder_weights)
+
+    augmentation_params = albu.Compose([
+        albu.CLAHE(p=0.2),
+        albu.RandomSizedCrop(min_max_height=(int(0.7 * args.input_size[0]), int(0.9 * args.input_size[0])),
+                             height=args.input_size[0],
+                             width=args.input_size[1],
+                             w2h_ratio=1.0,
+                             p=0.2),
+        albu.Rotate(15),
+        albu.HorizontalFlip(p=0.5),
+        albu.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2, p=0.2)
+    ])
+
     datasets = {}
     for subset_name in subsets:
-        augmentation_params_ = None
-        if subset_name == 'train':
-            augmentation_params_ = augmentation_params
+        _augmentation_params = augmentation_params if subset_name == 'train' else None
 
         dataset = SegmentationDataset(img_paths=subsets[subset_name][0],
                                       ann_paths=subsets[subset_name][1],
                                       input_size=args.input_size,
                                       class_name=args.class_name,
-                                      augmentation_params=augmentation_params_,
+                                      augmentation_params=_augmentation_params,
                                       transform_params=preprocessing_params)
         datasets[subset_name] = dataset
 
-    num_workers = 8 * device_count()            # If debug is frozen, use num_workers = 0
+    # Used only for augmentation debugging
+    # import cv2
+    # import torch
+    # import numpy as np
+    # idx = 0
+    # img_tensor, mask_tensor = datasets['train'][idx]
+    # mean = np.array(preprocessing_params['mean'])
+    # std = np.array(preprocessing_params['std'])
+    # _img = ((img_tensor.permute(1, 2, 0).cpu().detach().numpy() * std) + mean) * 255
+    # img = _img.astype(np.uint8)
+    # _mask = (torch.squeeze(mask_tensor).cpu().detach().numpy()) * 255
+    # mask = _mask.astype(np.uint8)
+    # cv2.imwrite('img.png', img)
+    # cv2.imwrite('mask.png', mask)
+
+    # If debug is frozen, use num_workers = 0
+    num_workers = 8 * device_count()
     train_loader = DataLoader(datasets['train'], batch_size=args.batch_size, num_workers=num_workers)
     val_loader = DataLoader(datasets['val'], batch_size=args.batch_size, num_workers=num_workers)
     test_loader = DataLoader(datasets['test'], batch_size=args.batch_size, num_workers=num_workers)
@@ -86,35 +106,35 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Segmentation pipeline')
-    parser.add_argument('--dataset_dir', default='dataset/covid_segmentation', type=str, help='dataset/covid_segmentation or dataset/lungs_segmentation')
+    parser.add_argument('--dataset_dir', default='dataset/lungs_segmentation', type=str, help='dataset/covid_segmentation or dataset/lungs_segmentation')
     parser.add_argument('--included_datasets', default=None, type=str)
     parser.add_argument('--excluded_datasets', default=None, type=str)
     parser.add_argument('--ratio', nargs='+', default=(0.8, 0.1, 0.1), type=float, help='train, val, and test sizes')
-    parser.add_argument('--input_size', nargs='+', default=(512, 512), type=int)
-    parser.add_argument('--model_name', default='Unet', type=str, help='Unet, Unet++, DeepLabV3, DeepLabV3+, FPN, Linknet, PSPNet or PAN')
-    parser.add_argument('--encoder_name', default='resnet18', type=str)
+    parser.add_argument('--input_size', nargs='+', default=(480, 480), type=int)
+    parser.add_argument('--model_name', default='DeepLabV3', type=str, help='Unet, Unet++, DeepLabV3, DeepLabV3+, FPN, Linknet, PSPNet or PAN')
+    parser.add_argument('--encoder_name', default='dpn68', type=str)
     parser.add_argument('--encoder_weights', default='imagenet', type=str, help='imagenet, ssl or swsl')
-    parser.add_argument('--batch_size', default=4, type=int)
+    parser.add_argument('--batch_size', default=2, type=int)
     parser.add_argument('--loss', default='Dice', type=str, help='Dice, Jaccard, BCE or BCEL')
     parser.add_argument('--optimizer', default='Adam', type=str, help='SGD, Adam, AdamW, RMSprop, Adam_amsgrad or AdamW_amsgrad')
-    parser.add_argument('--lr', default=0.001, type=float)
+    parser.add_argument('--lr', default=0.0001, type=float)
     parser.add_argument('--es_patience', default=10, type=int)
     parser.add_argument('--es_min_delta', default=0.01, type=float)
     parser.add_argument('--monitor_metric', default='fscore', type=str)
-    parser.add_argument('--epochs', default=20, type=int)
+    parser.add_argument('--epochs', default=30, type=int)
     parser.add_argument('--save_dir', default='models', type=str)
     parser.add_argument('--wandb_project_name', default=None, type=str)
     parser.add_argument('--wandb_api_key', default='b45cbe889f5dc79d1e9a0c54013e6ab8e8afb871', type=str)
     args = parser.parse_args()
 
     # Used only for debugging
-    args.excluded_datasets = [
-        'covid-chestxray-dataset',
-        'COVID-19-Radiography-Database',
-        'Figure1-COVID-chestxray-dataset',
-        'rsna_normal',
-        'chest_xray_normal'
-    ]
+    # args.excluded_datasets = [
+    #     'covid-chestxray-dataset',
+    #     'COVID-19-Radiography-Database',
+    #     'Figure1-COVID-chestxray-dataset',
+    #     'rsna_normal',
+    #     'chest_xray_normal'
+    # ]
 
     if 'covid' in args.dataset_dir:
         args.class_name = 'COVID-19'

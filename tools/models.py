@@ -12,16 +12,6 @@ from tools.data_processing_tools import log_datasets_files
 from tools.utils import EarlyStopping, divide_lung, separate_lungs          # TODO (David): divide_lung, separate_lungs
 
 
-# TODO: think of adding more augmentation transformations such as Cutout, Grid Mask, MixUp, CutMix, Cutout, Mosaic
-#       https://towardsdatascience.com/data-augmentation-in-yolov4-c16bd22b2617
-def augmentation_params() -> A.Compose:
-    aug_transforms = [
-        A.HorizontalFlip(p=0.5),
-        # A.RandomCrop(height=600, width=600, always_apply=True)
-    ]
-    return A.Compose(aug_transforms)
-
-
 class SegmentationModel:
     def __init__(self,
                  model_name: str = 'Unet',
@@ -118,8 +108,6 @@ class SegmentationModel:
                                                    as_strings=False, print_per_layer_stat=False, verbose=False)
         macs = round(_macs / 10. ** 9, 1)
         params = round(_params / 10.**6, 1)
-        # total_params = sum(p.numel() for p in model.parameters())
-        # trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
         params = {'params': params, 'macs': macs}
         return params
 
@@ -400,7 +388,6 @@ class SegmentationModel:
                     best_weights_path = os.path.join(self.model_dir, 'best_weights.pth')
                     torch.save(model.state_dict(), best_weights_path)
                     torch.save(model.state_dict(), os.path.join(wandb.run.dir, "best_weights.pth"))
-
                     print('Best weights are saved to {:s}'.format(best_weights_path))
 
             if bool(test_logs):
@@ -423,10 +410,9 @@ class SegmentationModel:
                 break
 
         if not self.wandb_api_key is None:
-            wandb.save(os.path.join(wandb.run.dir, "best_weights.pth"))
-
-            model_artefact = wandb.Artifact("model_artefact", type='model')
-            model_artefact.add_file(os.path.join(wandb.run.dir, "best_weights.pth"))
+            wandb.save(os.path.join(wandb.run.dir, 'best_weights.pth'))
+            model_artefact = wandb.Artifact('model_artefact', type='model')
+            model_artefact.add_file(os.path.join(wandb.run.dir, 'best_weights.pth'))
             run.log_artifact(model_artefact)
 
 
