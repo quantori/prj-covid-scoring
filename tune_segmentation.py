@@ -5,6 +5,8 @@ import random
 import argparse
 from typing import List, Union
 
+import albumentations as albu
+
 import torch
 import wandb
 import numpy as np
@@ -20,6 +22,12 @@ from tools.data_processing_tools import split_data, convert_seconds_to_hms
 
 def main(config=None):
     with wandb.init(config=config):
+        augmentation_params = albu.Compose([
+            albu.Rotate(30),
+            albu.HorizontalFlip(p=0.5),
+            albu.RandomBrightnessContrast(p=0.2),
+        ])
+
         config = wandb.config
         run_name = wandb.run.name
         print('\033[92m' + '\n********** Run: {:s} **********\n'.format(run_name) + '\033[0m')
@@ -47,11 +55,15 @@ def main(config=None):
                                                                      pretrained=config.encoder_weights)
         datasets = {}
         for subset_name in subsets:
+            augmentation_params_ = None
+            if subset_name == 'train':
+                augmentation_params_ = augmentation_params
+
             dataset = SegmentationDataset(img_paths=subsets[subset_name][0],
                                           ann_paths=subsets[subset_name][1],
                                           input_size=config.input_size,
                                           class_name=config.class_name,
-                                          augmentation_params=None,
+                                          augmentation_params=augmentation_params_,
                                           transform_params=preprocessing_params)
             datasets[subset_name] = dataset
 
