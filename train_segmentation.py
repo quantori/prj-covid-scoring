@@ -1,5 +1,7 @@
 import argparse
 
+import albumentations as albu
+
 from torch.cuda import device_count
 from torch.utils.data import DataLoader
 import segmentation_models_pytorch as smp
@@ -11,6 +13,11 @@ from tools.data_processing_tools import split_data, covid_segmentation_labels
 
 
 def main(args):
+    augmentation_params = albu.Compose([
+        albu.Rotate(30),
+        albu.HorizontalFlip(p=0.5),
+        albu.RandomBrightnessContrast(p=0.2),
+    ])
 
     img_paths, ann_paths, dataset_names = read_supervisely_project(sly_project_dir=args.dataset_dir,
                                                                    included_datasets=args.included_datasets,
@@ -27,11 +34,15 @@ def main(args):
                                                                  pretrained=args.encoder_weights)
     datasets = {}
     for subset_name in subsets:
+        augmentation_params_ = None
+        if subset_name == 'train':
+            augmentation_params_ = augmentation_params
+
         dataset = SegmentationDataset(img_paths=subsets[subset_name][0],
                                       ann_paths=subsets[subset_name][1],
                                       input_size=args.input_size,
                                       class_name=args.class_name,
-                                      augmentation_params=None,
+                                      augmentation_params=augmentation_params_,
                                       transform_params=preprocessing_params)
         datasets[subset_name] = dataset
 
