@@ -1,6 +1,6 @@
 import os
 from datetime import datetime
-from typing import List, Dict, Tuple, Any, Union, Callable
+from typing import List, Dict, Tuple, Any, Union
 
 import wandb
 import torch
@@ -8,7 +8,7 @@ import numpy as np
 import albumentations as A
 import segmentation_models_pytorch as smp
 
-from tools.data_processing_tools import log_datasets_files
+from tools.data_processing import log_datasets_files
 from tools.utils import EarlyStopping, divide_lung, separate_lungs
 
 
@@ -513,13 +513,13 @@ class TuningModel(SegmentationModel):
                 break
 
 
-class CovidNet:
+class CovidScoringNet:
     def __init__(self,
-                 lung_segmentation_model,
+                 lungs_segmentation_model,
                  covid_segmentation_model,
                  threshold: float):
-        assert 0 <= threshold <= 1, 'threshold is in incorrect scale, should be in [0,1]'
-        self.lung_segmentation = lung_segmentation_model
+        assert 0 <= threshold <= 1, 'Threshold value is in an incorrect scale. It should be in the range [0,1].'
+        self.lungs_segmentation = lungs_segmentation_model
         self.covid_segmentation = covid_segmentation_model
         self.threshold = threshold
 
@@ -527,10 +527,13 @@ class CovidNet:
         return self.predict(img)
 
     def predict(self, img):
-        assert img.shape[0:2] == (1, 3), 'incorrect shape'
-        lungs_predicted = self.lung_segmentation(img)[0, 0, :, :].cpu().detach().numpy()
+        assert img.shape[0:2] == (1, 3), 'Incorrect image dimensions'
+        lungs_predicted = self.lungs_segmentation(img)[0, 0, :, :].cpu().detach().numpy()
         covid_predicted = self.covid_segmentation(img)[0, 0, :, :].cpu().detach().numpy()
 
+        # TODO (David): Estimate optimal thresholds for lungs and covid predictions
+        # TODO (David): https://quantori.atlassian.net/wiki/spaces/PRJVOL/pages/2253324439/May+7+2021#3.-Results
+        # TODO (David): https://towardsdatascience.com/fine-tuning-a-classifier-in-scikit-learn-66e048c21e65
         lungs_predicted = (lungs_predicted > 0.5).astype(np.uint8)
         covid_predicted = (covid_predicted > 0.5).astype(np.uint8)
 
