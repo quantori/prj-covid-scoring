@@ -2,6 +2,7 @@ import os
 from datetime import datetime
 from typing import List, Dict, Tuple, Any, Union
 
+import cv2
 import wandb
 import torch
 import numpy as np
@@ -126,6 +127,7 @@ class SegmentationModel:
 
     def _get_log_images(self,
                         model: Any,
+                        log_image_size: Tuple[int, int],
                         logging_loader: torch.utils.data.dataloader.DataLoader) -> Tuple[List[wandb.Image], List[wandb.Image]]:
 
         mean = torch.tensor(logging_loader.dataset.transform_params['mean'])
@@ -142,15 +144,19 @@ class SegmentationModel:
                 image_bg = torch.clone(image).squeeze(dim=0)
                 image_bg = image_bg.permute(1, 2, 0)
                 image_bg = (((image_bg.detach().cpu() * std) + mean) * 255).numpy().astype(np.uint8)
+                image_bg = cv2.resize(image_bg, log_image_size, interpolation=cv2.INTER_CUBIC)
 
                 mask_gt = torch.clone(mask).squeeze()
                 mask_gt = mask_gt.detach().cpu().numpy().astype(np.uint8)
+                mask_gt = cv2.resize(mask_gt, log_image_size, interpolation=cv2.INTER_NEAREST)
 
                 mask_pred = torch.clone(prediction).squeeze()
                 mask_pred = (mask_pred > 0.5).detach().cpu().numpy().astype(np.uint8)
+                mask_pred = cv2.resize(mask_pred, log_image_size, interpolation=cv2.INTER_NEAREST)
 
                 prob_map = torch.clone(prediction).squeeze()
                 prob_map = (prob_map * 255).detach().cpu().numpy().astype(np.uint8)
+                prob_map = cv2.resize(prob_map, log_image_size, interpolation=cv2.INTER_CUBIC)
 
                 segmentation_masks.append(wandb.Image(image_bg,
                                                       masks={'Prediction': {'mask_data': mask_pred,
@@ -397,7 +403,7 @@ class SegmentationModel:
                     wandb.log(data={'best/test_score': best_test_score, 'best/test_epoch': epoch}, commit=False)
 
             metrics = self._get_log_metrics(train_logs, val_logs, test_logs)
-            masks, maps = self._get_log_images(model, logging_loader)
+            masks, maps = self._get_log_images(model=model, log_image_size=(1000, 1000), logging_loader=logging_loader)
             wandb.log(data=metrics, commit=False)
             wandb.log(data={'Segmentation masks': masks, 'Probability maps': maps})
 
@@ -411,7 +417,7 @@ class SegmentationModel:
 
         if not self.wandb_api_key is None:
             wandb.save(os.path.join(wandb.run.dir, 'best_weights.pth'))
-            model_artefact = wandb.Artifact('model_artefact', type='model')
+            model_artefact = wandb.Artifact('model', type='model')
             model_artefact.add_file(os.path.join(wandb.run.dir, 'best_weights.pth'))
             run.log_artifact(model_artefact)
 
