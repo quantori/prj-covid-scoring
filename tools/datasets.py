@@ -1,9 +1,9 @@
 from typing import List, Tuple, Union
 
 import cv2
+import torch
 import numpy as np
 from PIL import Image
-import torch
 from torch.utils.data import Dataset
 import torchvision.transforms as transforms
 
@@ -70,11 +70,12 @@ class SegmentationDataset(Dataset):
         return image, mask
 
 
-class LungCropper(Dataset):
+# TODO: Fix LungsCropper in order to cropped images
+class LungsCropper(Dataset):
     def __init__(self,
                  img_paths: List[str],
                  ann_paths: List[str],
-                 lung_semgentation_model=None,
+                 lung_segmentation_model=None,
                  model_input_size: Union[int, List[int]] = (512, 512),
                  output_size: Union[int, List[int]] = (512, 512),
                  class_name: str = 'COVID-19',
@@ -84,14 +85,13 @@ class LungCropper(Dataset):
 
         self.img_paths, self.ann_paths = img_paths, ann_paths
         self.class_name = class_name
-        self.model_input_size = (model_input_size, model_input_size) if isinstance(model_input_size,
-                                                                                   int) else model_input_size
+        self.model_input_size = (model_input_size, model_input_size) if isinstance(model_input_size, int) else model_input_size
         self.output_size = (output_size, output_size) if isinstance(output_size, int) else output_size
 
         self.augmentation_params = augmentation_params
         self.transform_params = transform_params
-        self.lung_semgentation_model = lung_semgentation_model.to(self.device)
-        self.lung_semgentation_model = self.lung_semgentation_model.eval()
+        self.lung_segmentation_model = lung_segmentation_model.to(self.device)
+        self.lung_segmentation_model = self.lung_segmentation_model.eval()
 
         self.preprocess_model_image = transforms.Compose([transforms.ToTensor(),
                                                           transforms.Resize(size=self.model_input_size,
@@ -119,7 +119,8 @@ class LungCropper(Dataset):
         ann_path = self.ann_paths[idx]
 
         image = cv2.imread(image_path)
-        image = cv2.resize(cv2.cvtColor(image, cv2.COLOR_BGR2RGB), self.model_input_size)
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        image = cv2.resize(image, self.model_input_size)
 
         # TODO: Fix masks when normal dataset is available
         if ('rsna_normal' in image_path) or ('chest_xray_normal' in image_path):
@@ -133,13 +134,13 @@ class LungCropper(Dataset):
             sample = self.augmentation_params(image=image, mask=mask)
             image, mask = sample['image'], sample['mask']
 
-        # TODO: avoid transfering tensors to numpy and numpy to tensors
+        # TODO: avoid transferring tensors to numpy and numpy to tensors
         if self.transform_params:
             transformed_image = self.preprocess_model_image(image)
             transformed_image = transformed_image.to(self.device)
 
             with torch.no_grad():
-                lungs_prediction = self.lung_semgentation_model(torch.unsqueeze(transformed_image, 0))
+                lungs_prediction = self.lung_segmentation_model(torch.unsqueeze(transformed_image, 0))
                 predicted_mask = lungs_prediction.permute(0, 2, 3, 1).cpu().detach().numpy()[0, :, :, :] > 0.5
 
             intersection_mask = mask * predicted_mask[:, :, 0]
