@@ -41,7 +41,6 @@ def main(args):
     datasets = {}
     for subset_name in subsets:
         _augmentation_params = augmentation_params if subset_name == 'train' else None
-
         dataset = SegmentationDataset(img_paths=subsets[subset_name][0],
                                       ann_paths=subsets[subset_name][1],
                                       input_size=args.input_size,
@@ -114,7 +113,7 @@ if __name__ == '__main__':
     parser.add_argument('--model_name', default='DeepLabV3', type=str, help='Unet, Unet++, DeepLabV3, DeepLabV3+, FPN, Linknet, PSPNet or PAN')
     parser.add_argument('--encoder_name', default='dpn68', type=str)
     parser.add_argument('--encoder_weights', default='imagenet', type=str, help='imagenet, ssl or swsl')
-    parser.add_argument('--batch_size', default=2, type=int)
+    parser.add_argument('--batch_size', default=8, type=int)
     parser.add_argument('--loss', default='Dice', type=str, help='Dice, Jaccard, BCE or BCEL')
     parser.add_argument('--optimizer', default='Adam', type=str, help='SGD, Adam, AdamW, RMSprop, Adam_amsgrad or AdamW_amsgrad')
     parser.add_argument('--lr', default=0.0001, type=float)
