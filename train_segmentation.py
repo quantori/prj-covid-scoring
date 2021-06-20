@@ -8,7 +8,7 @@ import segmentation_models_pytorch as smp
 from tools.models import SegmentationModel
 from tools.datasets import SegmentationDataset
 from tools.supervisely_tools import read_supervisely_project
-from tools.data_processing_tools import split_data, covid_segmentation_labels
+from tools.data_processing import split_data, covid_segmentation_labels
 
 
 def main(args):

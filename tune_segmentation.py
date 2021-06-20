@@ -16,7 +16,7 @@ import segmentation_models_pytorch as smp
 from tools.models import TuningModel
 from tools.datasets import SegmentationDataset
 from tools.supervisely_tools import read_supervisely_project
-from tools.data_processing_tools import split_data, convert_seconds_to_hms
+from tools.data_processing import split_data, convert_seconds_to_hms
 
 
 def main(config=None):
