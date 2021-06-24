@@ -72,32 +72,47 @@ def convert_ann_to_mask(ann_path: str,
     img_height = data['size']['height']
     img_width = data['size']['width']
 
+    try:
+        is_normal = True if data['tags'][0]['name'] == 'Normal' else False
+    except Exception:
+        is_normal = False
+
     mask = np.zeros((img_height, img_width), dtype=np.uint8)
-    for obj in data['objects']:
-        if obj['classTitle'] == class_name:
-            encoded_bitmap = obj['bitmap']['data']
-            _mask = convert_base64_to_image(s=encoded_bitmap)
 
-            if filter_mask:
-                min_dim = min(_mask.shape)
-                kernel_size = int(0.05 * min_dim)
-                kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kernel_size, kernel_size))
-                _mask = cv2.morphologyEx(_mask, cv2.MORPH_OPEN, kernel, iterations=3)
+    # Objects with masks for example COVID-19 or Lungs
+    if not is_normal:
+        for obj in data['objects']:
+            if obj['classTitle'] == class_name:
+                encoded_bitmap = obj['bitmap']['data']
+                _mask = convert_base64_to_image(s=encoded_bitmap)
 
-            x, y = obj['bitmap']['origin']
-            _mask_height, _mask_width = _mask.shape
-            mask[y: y + _mask_height, x:x + _mask_width] = _mask
-        else:
-            continue
+                # Be careful with morphology filtering. Use the following approximate kernel sizes:
+                # kernel_size = int(0.05 * min_dim) for big masks   (size > 1000x1000)
+                # kernel_size = int(0.01 * min_dim) for small masks (size > 500x500)
+                if filter_mask:
+                    min_dim = min(_mask.shape)
+                    kernel_size = int(0.01 * min_dim)
+                    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kernel_size, kernel_size))
+                    _mask = cv2.morphologyEx(_mask, cv2.MORPH_OPEN, kernel, iterations=3)
+
+                x, y = obj['bitmap']['origin']
+                _mask_height, _mask_width = _mask.shape
+                mask[y: y + _mask_height, x:x + _mask_width] = _mask
+            else:
+                continue
+
     mask = np.expand_dims(mask, axis=2)
     return mask
 
 
 if __name__ == '__main__':
 
-    image_paths, ann_paths, dataset_names = read_supervisely_project(sly_project_dir='dataset/covid_segmentation',
-                                                                     included_datasets=['Actualmed-COVID-chestxray-dataset',
-                                                                                        'COVID-19-Radiography-Database'])
+    # The code snippet below is used only for debugging
+    image_paths, ann_paths, dataset_names = read_supervisely_project(sly_project_dir='dataset/covid_segmentation_single_crop',
+                                                                     included_datasets=[
+                                                                         'Actualmed-COVID-chestxray-dataset',
+                                                                         'rsna_normal'
+                                                                                        ])
     for idx in range(30):
         ann_path = ann_paths[idx]
         mask = convert_ann_to_mask(ann_path=ann_path,
