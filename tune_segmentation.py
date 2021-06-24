@@ -128,7 +128,11 @@ def get_values(min: int, max: int, step: int, dtype) -> Union[List[int], List[fl
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='Tuning pipeline')
-    parser.add_argument('--dataset_dir', default='dataset/lungs_segmentation', type=str, help='dataset/covid_segmentation or dataset/lungs_segmentation')
+    parser.add_argument('--dataset_dir', default='dataset/covid_segmentation', type=str,
+                        help='dataset/covid_segmentation, '
+                             'dataset/covid_segmentation_single_crop, '
+                             'dataset/covid_segmentation_double_crop,'
+                             'dataset/lungs_segmentation')
     parser.add_argument('--included_datasets', default=None, type=str)
     parser.add_argument('--excluded_datasets', default=None, type=str)
     parser.add_argument('--data_fraction_used', default=0.1, type=float)
@@ -155,15 +159,13 @@ if __name__ == '__main__':
 
     if 'covid' in args.dataset_dir:
         args.class_name = 'COVID-19'
+        args.wandb_project_name = 'covid_segmentation_tuning' if not isinstance(args.wandb_project_name, str) else args.wandb_project_name
     elif 'lungs' in args.dataset_dir:
         args.class_name = 'Lungs'
+        args.wandb_project_name = 'lungs_segmentation' if not isinstance(args.wandb_project_name, str) else args.wandb_project_name
     else:
         raise ValueError('There is no class name for dataset {:s}'.format(args.dataset_dir))
 
-    if not isinstance(args.wandb_project_name, str) and args.class_name == 'COVID-19':
-        args.wandb_project_name = 'covid_segmentation_tuning'
-    elif not isinstance(args.wandb_project_name, str) and args.class_name == 'Lungs':
-        args.wandb_project_name = 'lungs_segmentation_tuning'
     print('\n\033[92m' + 'W&B project name: {:s}\n'.format(args.wandb_project_name) + '\033[0m')
 
     goal = 'minimize' if 'loss' in args.monitor_metric else 'maximize'
