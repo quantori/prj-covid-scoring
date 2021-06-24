@@ -33,7 +33,7 @@ def main(args):
                              width=args.input_size[1],
                              w2h_ratio=1.0,
                              p=0.2),
-        albu.Rotate(15),
+        albu.Rotate(limit=15, p=0.5),
         albu.HorizontalFlip(p=0.5),
         albu.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2, p=0.2)
     ])
@@ -70,9 +70,8 @@ def main(args):
     val_loader = DataLoader(datasets['val'], batch_size=args.batch_size, num_workers=num_workers)
     test_loader = DataLoader(datasets['test'], batch_size=args.batch_size, num_workers=num_workers)
 
-    logging_dir = args.dataset_dir + '_logging'
     # Use all images from the logging folder without exclusion
-    img_paths_logging, ann_paths_logging, dataset_names_logging = read_supervisely_project(sly_project_dir=logging_dir,
+    img_paths_logging, ann_paths_logging, dataset_names_logging = read_supervisely_project(sly_project_dir=args.logging_dir,
                                                                                            included_datasets=None,
                                                                                            excluded_datasets=None)
     logging_dataset = SegmentationDataset(img_paths=img_paths_logging,
@@ -105,13 +104,13 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Segmentation pipeline')
-    parser.add_argument('--dataset_dir', default='dataset/lungs_segmentation', type=str, help='dataset/covid_segmentation or dataset/lungs_segmentation')
+    parser.add_argument('--dataset_dir', default='dataset/covid_segmentation_single_crop', type=str, help='dataset/covid_segmentation or dataset/lungs_segmentation')
     parser.add_argument('--included_datasets', default=None, type=str)
     parser.add_argument('--excluded_datasets', default=None, type=str)
     parser.add_argument('--ratio', nargs='+', default=(0.8, 0.1, 0.1), type=float, help='train, val, and test sizes')
-    parser.add_argument('--input_size', nargs='+', default=(480, 480), type=int)
-    parser.add_argument('--model_name', default='DeepLabV3', type=str, help='Unet, Unet++, DeepLabV3, DeepLabV3+, FPN, Linknet, PSPNet or PAN')
-    parser.add_argument('--encoder_name', default='dpn68', type=str)
+    parser.add_argument('--model_name', default='Unet', type=str, help='Unet, Unet++, DeepLabV3, DeepLabV3+, FPN, Linknet, PSPNet or PAN')
+    parser.add_argument('--input_size', nargs='+', default=(512, 512), type=int)
+    parser.add_argument('--encoder_name', default='resnet18', type=str)
     parser.add_argument('--encoder_weights', default='imagenet', type=str, help='imagenet, ssl or swsl')
     parser.add_argument('--batch_size', default=8, type=int)
     parser.add_argument('--loss', default='Dice', type=str, help='Dice, Jaccard, BCE or BCEL')
@@ -137,16 +136,15 @@ if __name__ == '__main__':
 
     if 'covid' in args.dataset_dir:
         args.class_name = 'COVID-19'
+        args.wandb_project_name = 'covid_segmentation' if not isinstance(args.wandb_project_name, str) else args.wandb_project_name
+        args.logging_dir = args.dataset_dir + '_logging'
     elif 'lungs' in args.dataset_dir:
         args.class_name = 'Lungs'
+        args.wandb_project_name = 'lungs_segmentation' if not isinstance(args.wandb_project_name, str) else args.wandb_project_name
+        args.logging_dir = args.dataset_dir + '_logging'
     else:
         raise ValueError('There is no class name for dataset {:s}'.format(args.dataset_dir))
 
-    if not isinstance(args.wandb_project_name, str) and args.class_name == 'COVID-19':
-        args.wandb_project_name = 'covid_segmentation'
-    elif not isinstance(args.wandb_project_name, str) and args.class_name == 'Lungs':
-        args.wandb_project_name = 'lungs_segmentation'
-    else:
-        print('\nW&B project name: {:s}'.format(args.wandb_project_name))
+    print('\nW&B project name: {:s}'.format(args.wandb_project_name))
 
     main(args)
