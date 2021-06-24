@@ -36,11 +36,7 @@ class SegmentationDataset(Dataset):
         image = cv2.imread(image_path)
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
-        # TODO: Fix masks when normal dataset is available
-        if ('rsna_normal' in image_path) or ('chest_xray_normal' in image_path):
-            mask = np.zeros(image.shape[:2], dtype=np.uint8)
-        else:
-            mask = convert_ann_to_mask(ann_path=ann_path, class_name=self.class_name)
+        mask = convert_ann_to_mask(ann_path=ann_path, class_name=self.class_name)
 
         # Apply augmentation
         if self.augmentation_params:
@@ -70,7 +66,7 @@ class SegmentationDataset(Dataset):
         return image, mask
 
 
-# TODO: Fix LungsCropper in order to cropped images
+# TODO: Fix LungsCropper in order to crop images
 class LungsCropper(Dataset):
     def __init__(self,
                  img_paths: List[str],
@@ -122,7 +118,8 @@ class LungsCropper(Dataset):
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         image = cv2.resize(image, self.model_input_size)
 
-        # TODO: Fix masks when normal dataset is available
+        # TODO (David): convert_ann_to_mask was changed, test correct mask conversion using the following:
+        # TODO (David): mask = convert_ann_to_mask(ann_path=ann_path, class_name=self.class_name)
         if ('rsna_normal' in image_path) or ('chest_xray_normal' in image_path):
             mask = np.zeros(image.shape[:2], dtype=np.uint8)
         else:
@@ -147,3 +144,23 @@ class LungsCropper(Dataset):
             mask = self.preprocess_output_mask(intersection_mask)
             image = self.preprocess_output_image(image * predicted_mask)
         return image, mask
+
+
+if __name__ == '__main__':
+
+    # The code snippet below is used only for debugging
+    from tools.supervisely_tools import read_supervisely_project
+    image_paths, ann_paths, dataset_names = read_supervisely_project(sly_project_dir='dataset/covid_segmentation_single_crop',
+                                                                     included_datasets=[
+                                                                         'Actualmed-COVID-chestxray-dataset',
+                                                                         'rsna_normal'
+                                                                     ])
+    dataset = SegmentationDataset(img_paths=image_paths,
+                                  ann_paths=ann_paths,
+                                  input_size=[512, 512],
+                                  class_name='COVID-19',
+                                  augmentation_params=None,
+                                  transform_params=None)
+
+    for idx in range(30):
+        img, mask = dataset[idx]
