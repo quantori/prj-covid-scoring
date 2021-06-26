@@ -29,14 +29,17 @@ class SegmentationDataset(Dataset):
     def __len__(self):
         return len(self.img_paths)
 
-    def __getitem__(self,
-                    idx: int) -> Tuple[np.ndarray, np.ndarray]:
+    def __getitem__(self, idx: int):
+
         image_path = self.img_paths[idx]
         ann_path = self.ann_paths[idx]
         image = cv2.imread(image_path)
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
         mask = convert_ann_to_mask(ann_path=ann_path, class_name=self.class_name)
+
+        mask_sum = torch.tensor((np.sum(mask) > 0).astype(np.int32), dtype=torch.int32)
+        mask_sum = torch.unsqueeze(mask_sum, -1).to(torch.float32)
 
         # Apply augmentation
         if self.augmentation_params:
@@ -63,7 +66,7 @@ class SegmentationDataset(Dataset):
             # transformed_mask = transforms.ToPILImage()(mask)
             # transformed_image.show()
             # transformed_mask.show()
-        return image, mask
+        return image, mask, mask_sum
 
 
 # TODO: Fix LungsCropper in order to crop images

@@ -82,15 +82,25 @@ def main(config=None):
                    'test_images': len(test_loader.dataset.img_paths)},
                   commit=False)
 
+        aux_params = None
+        if config.aux_params:
+            aux_params = dict(
+                pooling='avg',  # one of 'avg', 'max'
+                dropout=0.5,  # dropout ratio, default is None
+                activation='sigmoid',  # activation function, default is None
+                classes=1,  # define number of output labels
+            )
+
         # Build model
         model = TuningModel(model_name=config.model_name,
                             encoder_name=config.encoder_name,
                             encoder_weights=config.encoder_weights,
+                            aux_params=aux_params,
                             batch_size=config.batch_size,
                             epochs=config.epochs,
                             input_size=config.input_size,
                             class_name=config.class_name,
-                            loss=config.loss,
+                            sm_loss=config.sm_loss,
                             optimizer=config.optimizer,
                             es_patience=args.es_patience,
                             es_min_delta=args.es_min_delta,
@@ -138,12 +148,14 @@ if __name__ == '__main__':
     parser.add_argument('--data_fraction_used', default=0.1, type=float)
     parser.add_argument('--ratio', nargs='+', default=(0.8, 0.2, 0.0), type=float, help='(train_size, val_size, test_size)')
     parser.add_argument('--tuning_method', default='random', type=str, help='grid, random, bayes')
-    parser.add_argument('--max_runs', default=300, type=int, help='number of trials to run')
+    parser.add_argument('--max_runs', default=2, type=int, help='number of trials to run')
     parser.add_argument('--batch_size', default=4, type=int)
     parser.add_argument('--es_patience', default=6, type=int)
     parser.add_argument('--es_min_delta', default=0.01, type=float)
     parser.add_argument('--monitor_metric', default='fscore', type=str)
     parser.add_argument('--epochs', default=16, type=int)
+    parser.add_argument('--aux_params', default=True, type=bool)
+
     parser.add_argument('--wandb_project_name', default=None, type=str)
     parser.add_argument('--wandb_api_key', default='b45cbe889f5dc79d1e9a0c54013e6ab8e8afb871', type=str)
     args = parser.parse_args()
@@ -188,6 +200,7 @@ if __name__ == '__main__':
             'encoder_weights': {'value': 'imagenet'},                                         # Possible options: imagenet, ssl or sws
             'batch_size': {'value': args.batch_size},
             'epochs': {'value': args.epochs},
+            'aux_params': {'value': args.aux_params},
             'monitor_metric': {'value': args.monitor_metric},
 
             # Variable hyperparameters
@@ -195,7 +208,8 @@ if __name__ == '__main__':
             # 'model_name': {'values': ['Unet']},
             'input_size': {'values': get_values(min=384, max=640, step=32, dtype=int)},
             # 'input_size': {'values': [512]},
-            'loss': {'values': ['Dice', 'Jaccard', 'BCE', 'BCEL']},
+            'sm_loss': {'values': ['Dice', 'Jaccard', 'BCE', 'BCEL']},
+            'clf_loss': {'values': ['CrossEntropyLoss', 'BCELoss']},
             # 'loss': {'values': ['Dice']},
             'optimizer': {'values': ['SGD', 'RMSprop', 'Adam', 'AdamW', 'Adam_amsgrad', 'AdamW_amsgrad']},
             # 'optimizer': {'values': ['Adam_amsgrad']},

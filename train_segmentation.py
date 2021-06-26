@@ -82,13 +82,24 @@ def main(args):
                                           transform_params=preprocessing_params)
     logging_loader = DataLoader(logging_dataset, num_workers=num_workers)
 
+    aux_params = None
+    if args.aux_params:
+        aux_params = dict(
+            pooling='avg',             # one of 'avg', 'max'
+            dropout=0.5,               # dropout ratio, default is None
+            activation='sigmoid',      # activation function, default is None
+            classes=1,                 # define number of output labels
+        )
+
     model = SegmentationModel(model_name=args.model_name,
                               encoder_name=args.encoder_name,
                               encoder_weights=args.encoder_weights,
+                              aux_params=aux_params,
                               batch_size=args.batch_size,
                               epochs=args.epochs,
                               class_name=args.class_name,
-                              loss=args.loss,
+                              sm_loss=args.sm_loss,
+                              clf_loss=args.clf_loss,
                               optimizer=args.optimizer,
                               lr=args.lr,
                               es_patience=args.es_patience,
@@ -113,13 +124,16 @@ if __name__ == '__main__':
     parser.add_argument('--encoder_name', default='resnet18', type=str)
     parser.add_argument('--encoder_weights', default='imagenet', type=str, help='imagenet, ssl or swsl')
     parser.add_argument('--batch_size', default=8, type=int)
-    parser.add_argument('--loss', default='Dice', type=str, help='Dice, Jaccard, BCE or BCEL')
+    parser.add_argument('--sm_loss', default='Dice', type=str, help='Dice, Jaccard, BCE or BCEL')
+    parser.add_argument('--clf_loss', default='BCELoss', type=str, help='BCELoss, CrossEntropyLoss') #BCELoss
+
     parser.add_argument('--optimizer', default='Adam', type=str, help='SGD, Adam, AdamW, RMSprop, Adam_amsgrad or AdamW_amsgrad')
     parser.add_argument('--lr', default=0.0001, type=float)
     parser.add_argument('--es_patience', default=10, type=int)
     parser.add_argument('--es_min_delta', default=0.01, type=float)
     parser.add_argument('--monitor_metric', default='fscore', type=str)
     parser.add_argument('--epochs', default=30, type=int)
+    parser.add_argument('--aux_params', default=True, type=bool)
     parser.add_argument('--save_dir', default='models', type=str)
     parser.add_argument('--wandb_project_name', default=None, type=str)
     parser.add_argument('--wandb_api_key', default='b45cbe889f5dc79d1e9a0c54013e6ab8e8afb871', type=str)

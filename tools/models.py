@@ -18,6 +18,7 @@ class SegmentationModel:
                  model_name: str = 'Unet',
                  encoder_name: str = 'resnet18',
                  encoder_weights: str = 'imagenet',
+                 aux_params: Dict = None,
                  batch_size: int = 4,
                  epochs: int = 30,
                  input_size: Union[int, List[int]] = (512, 512),
@@ -25,7 +26,10 @@ class SegmentationModel:
                  num_classes: int = 1,
                  class_name: str = 'COVID-19',
                  activation: str = 'sigmoid',
-                 loss: str = 'Dice',
+                 sm_loss: str = 'Dice',
+                 clf_loss: str = None,
+                 w1: float = 0.5,
+                 w2: float = 0.5,
                  optimizer: str = 'AdamW',
                  lr: float = 0.0001,
                  es_patience: int = None,
@@ -48,13 +52,17 @@ class SegmentationModel:
         self.model_name = model_name
         self.encoder_name = encoder_name
         self.encoder_weights = encoder_weights
+        self.aux_params = aux_params
         self.batch_size = batch_size
         self.epochs = epochs
         self.in_channels = in_channels
         self.num_classes = num_classes
         self.class_name = class_name
         self.activation = activation
-        self.loss = loss
+        self.sm_loss = sm_loss
+        self.clf_loss = clf_loss
+        self.w1 = w1
+        self.w2 = w2
         self.optimizer = optimizer
         self.lr = lr
         self.es_patience = es_patience
@@ -82,7 +90,8 @@ class SegmentationModel:
             'classes': self.num_classes,
             'class_name': self.class_name,
             'activation': self.activation,
-            'loss': self.loss,
+            'sm_loss': self.sm_loss,
+            'clf_loss': self.clf_loss,
             'optimizer': self.optimizer,
             'lr': self.lr,
             'es_patience': self.es_patience,
@@ -136,10 +145,15 @@ class SegmentationModel:
         with torch.no_grad():
             segmentation_masks = []
             probability_maps = []
-            for idx, (image, mask) in enumerate(logging_loader):
+            for idx, (image, mask, label) in enumerate(logging_loader):
                 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-                image, mask = image.to(device), mask.to(device)
+                image, mask, label = image.to(device), mask.to(device), label.to(device)
                 prediction = model(image)
+                if isinstance(prediction, tuple):
+                    prediction, clf_pred = prediction
+                    clf_pred = torch.squeeze(clf_pred)
+                    if clf_pred == 0:
+                        prediction = torch.zeros_like(prediction)
 
                 image_bg = torch.clone(image).squeeze(dim=0)
                 image_bg = image_bg.permute(1, 2, 0)
@@ -181,7 +195,7 @@ class SegmentationModel:
                                                                      self.input_size[1],
                                                                      self.in_channels) + '\033[0m')
         print('\033[92m' + 'Batch size:       {:d}'.format(self.batch_size) + '\033[0m')
-        print('\033[92m' + 'Loss:             {:s}'.format(self.loss) + '\033[0m')
+        print('\033[92m' + 'Sm_loss:          {:s}'.format(self.sm_loss) + '\033[0m')
         print('\033[92m' + 'Optimizer:        {:s}'.format(self.optimizer) + '\033[0m')
         print('\033[92m' + 'Learning rate:    {:.4f}'.format(self.lr) + '\033[0m')
         print('\033[92m' + 'Class count:      {:d}'.format(self.num_classes) + '\033[0m')
@@ -221,49 +235,57 @@ class SegmentationModel:
                              encoder_weights=self.encoder_weights,
                              in_channels=self.in_channels,
                              classes=self.num_classes,
-                             activation=self.activation)
+                             activation=self.activation,
+                             aux_params=self.aux_params)
         elif self.model_name == 'Unet++':
             model = smp.UnetPlusPlus(encoder_name=self.encoder_name,
                                      encoder_weights=self.encoder_weights,
                                      in_channels=self.in_channels,
                                      classes=self.num_classes,
-                                     activation=self.activation)
+                                     activation=self.activation,
+                                     aux_params=self.aux_params)
         elif self.model_name == 'DeepLabV3':
             model = smp.DeepLabV3(encoder_name=self.encoder_name,
                                   encoder_weights=self.encoder_weights,
                                   in_channels=self.in_channels,
                                   classes=self.num_classes,
-                                  activation=self.activation)
+                                  activation=self.activation,
+                                  aux_params=self.aux_params)
         elif self.model_name == 'DeepLabV3+':
             model = smp.DeepLabV3Plus(encoder_name=self.encoder_name,
                                       encoder_weights=self.encoder_weights,
                                       in_channels=self.in_channels,
                                       classes=self.num_classes,
-                                      activation=self.activation)
+                                      activation=self.activation,
+                                      aux_params=self.aux_params)
         elif self.model_name == 'FPN':
             model = smp.FPN(encoder_name=self.encoder_name,
                             encoder_weights=self.encoder_weights,
                             in_channels=self.in_channels,
                             classes=self.num_classes,
-                            activation=self.activation)
+                            activation=self.activation,
+                            aux_params=self.aux_params)
         elif self.model_name == 'Linknet':
             model = smp.Linknet(encoder_name=self.encoder_name,
                                 encoder_weights=self.encoder_weights,
                                 in_channels=self.in_channels,
                                 classes=self.num_classes,
-                                activation=self.activation)
+                                activation=self.activation,
+                                aux_params=self.aux_params)
         elif self.model_name == 'PSPNet':
             model = smp.PSPNet(encoder_name=self.encoder_name,
                                encoder_weights=self.encoder_weights,
                                in_channels=self.in_channels,
                                classes=self.num_classes,
-                               activation=self.activation)
+                               activation=self.activation,
+                               aux_params=self.aux_params)
         elif self.model_name == 'PAN':
             model = smp.PAN(encoder_name=self.encoder_name,
                             encoder_weights=self.encoder_weights,
                             in_channels=self.in_channels,
                             classes=self.num_classes,
-                            activation=self.activation)
+                            activation=self.activation,
+                            aux_params=self.aux_params)
         else:
             raise ValueError('Unknown model name:'.format(self.model_name))
 
@@ -306,18 +328,30 @@ class SegmentationModel:
         return optimizer
 
     @staticmethod
-    def build_loss(loss: str) -> Any:
-        if loss == 'Dice':
-            loss = smp.utils.losses.DiceLoss()
-        elif loss == 'Jaccard':
-            loss = smp.utils.losses.JaccardLoss()
-        elif loss == 'BCE':
-            loss = smp.utils.losses.BCELoss()
-        elif loss == 'BCEL':
-            loss = smp.utils.losses.BCEWithLogitsLoss()
+    def build_loss(sm_loss: str, clf_loss: str = None) -> (Any, Any):
+        if sm_loss == 'Dice':
+            sm_loss = smp.utils.losses.DiceLoss()
+        elif sm_loss == 'Jaccard':
+            sm_loss = smp.utils.losses.JaccardLoss()
+        elif sm_loss == 'BCE':
+            sm_loss = smp.utils.losses.BCELoss()
+        elif sm_loss == 'BCEL':
+            sm_loss = smp.utils.losses.BCEWithLogitsLoss()
         else:
-            raise ValueError('Unknown loss: {}'.format(loss))
-        return loss
+            raise ValueError('Unknown loss: {}'.format(sm_loss))
+
+        if clf_loss is None:
+            pass
+        elif clf_loss == 'CrossEntropyLoss':
+            clf_loss = torch.nn.CrossEntropyLoss()
+            clf_loss.__name__ = 'CrossEntropyLoss'
+        elif clf_loss == 'BCELoss':
+            clf_loss = torch.nn.BCELoss()
+            clf_loss.__name__ = 'BCELoss'
+        else:
+            raise ValueError('Unknown loss: {}'.format(clf_loss))
+
+        return sm_loss, clf_loss
 
     def train(self,
               train_loader: torch.utils.data.dataloader.DataLoader,
@@ -335,7 +369,7 @@ class SegmentationModel:
         #                   os.path.join(self.model_dir, 'model.onnx'),
         #                   verbose=True)
         optimizer = self.build_optimizer(model=model, optimizer=self.optimizer, lr=self.lr)
-        loss = self.build_loss(loss=self.loss)
+        sm_loss, clf_loss = self.build_loss(sm_loss=self.sm_loss, clf_loss=self.clf_loss)
 
         # Use self.find_lr once in order to find LR boundaries
         # self.find_lr(model=model, optimizer=optimizer, criterion=loss, train_loader=train_loader, val_loader=val_loader)
@@ -348,9 +382,13 @@ class SegmentationModel:
                    smp.utils.metrics.Accuracy(threshold=0.5),
                    smp.utils.metrics.Precision(threshold=0.5),
                    smp.utils.metrics.Recall(threshold=0.5)]
-        train_epoch = smp.utils.train.TrainEpoch(model, loss=loss, metrics=metrics, optimizer=optimizer, device=self.device)
-        valid_epoch = smp.utils.train.ValidEpoch(model, loss=loss, metrics=metrics, stage_name='valid', device=self.device)
-        test_epoch = smp.utils.train.ValidEpoch(model, loss=loss, metrics=metrics, stage_name='test', device=self.device)
+        train_epoch = smp.utils.train.TrainEpoch(model, loss1=sm_loss, loss2=clf_loss, w1=self.w1, w2=self.w2,
+                                                 metrics=metrics, optimizer=optimizer, device=self.device)
+
+        valid_epoch = smp.utils.train.ValidEpoch(model, loss1=sm_loss, loss2=clf_loss, w1=self.w1, w2=self.w2,
+                                                 metrics=metrics, stage_name='valid', device=self.device)
+        test_epoch = smp.utils.train.ValidEpoch(model, loss1=sm_loss, loss2=clf_loss, w1=self.w1, w2=self.w2,
+                                                metrics=metrics, stage_name='test', device=self.device)
 
         # Initialize W&B
         if not self.wandb_api_key is None:
@@ -427,11 +465,13 @@ class TuningModel(SegmentationModel):
                  model_name: str = 'Unet',
                  encoder_name: str = 'resnet18',
                  encoder_weights: str = 'imagenet',
+                 aux_params: Dict = None,
                  batch_size: int = 4,
                  epochs: int = 30,
                  input_size: Union[int, List[int]] = (512, 512),
                  class_name: str = 'COVID-19',
-                 loss: str = 'Dice',
+                 sm_loss: str = 'Dice',
+                 clf_loss: str = None,
                  optimizer: str = 'AdamW',
                  es_patience: int = None,
                  es_min_delta: float = 0,
@@ -441,11 +481,13 @@ class TuningModel(SegmentationModel):
         self.model_name = model_name
         self.encoder_name = encoder_name
         self.encoder_weights = encoder_weights
+        self.aux_params = aux_params
         self.batch_size = batch_size
         self.epochs = epochs
         self.input_size = (input_size, input_size) if isinstance(input_size, int) else input_size
         self.class_name = class_name
-        self.loss = loss
+        self.sm_loss = sm_loss
+        self.clf_loss = clf_loss
         self.optimizer = optimizer
         self.lr = lr
         self.es_patience = es_patience
@@ -461,7 +503,7 @@ class TuningModel(SegmentationModel):
 
         model = self.get_model()
         optimizer = self.build_optimizer(model=model, optimizer=self.optimizer, lr=self.lr)
-        loss = self.build_loss(loss=self.loss)
+        sm_loss, clf_loss = self.build_loss(sm_loss=self.sm_loss, clf_loss=self.clf_loss)
         es_callback = EarlyStopping(monitor_metric=self.monitor_metric,
                                     patience=self.es_patience,
                                     min_delta=self.es_min_delta)
@@ -470,9 +512,13 @@ class TuningModel(SegmentationModel):
                    smp.utils.metrics.Accuracy(threshold=0.5),
                    smp.utils.metrics.Precision(threshold=0.5),
                    smp.utils.metrics.Recall(threshold=0.5)]
-        train_epoch = smp.utils.train.TrainEpoch(model, loss=loss, metrics=metrics, optimizer=optimizer, device=self.device)
-        valid_epoch = smp.utils.train.ValidEpoch(model, loss=loss, metrics=metrics, stage_name='valid', device=self.device)
-        test_epoch = smp.utils.train.ValidEpoch(model, loss=loss, metrics=metrics, stage_name='test', device=self.device)
+        train_epoch = smp.utils.train.TrainEpoch(model, loss1=sm_loss, loss2=clf_loss, w1=self.w1, w2=self.w2,
+                                                 metrics=metrics, optimizer=optimizer, device=self.device)
+        valid_epoch = smp.utils.train.ValidEpoch(model, loss1=sm_loss, loss2=clf_loss, w1=self.w1, w2=self.w2,
+                                                 metrics=metrics, stage_name='valid', device=self.device)
+
+        test_epoch = smp.utils.train.ValidEpoch(model, loss1=sm_loss, loss2=clf_loss, w1=self.w1, w2=self.w2,
+                                                metrics=metrics, stage_name='test', device=self.device)
 
         params = self._get_log_params(model, img_height=self.input_size[0], img_width=self.input_size[1], img_channels=self.in_channels)
         wandb.log(data=params, commit=False)

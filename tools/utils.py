@@ -65,9 +65,10 @@ def binary_search(img: np.array, threshold_start: int, threshold_end: int, optim
 
 def separate_lungs(mask: np.array):
     assert np.max(mask) <= 1 and np.min(mask) >= 0, 'mask values should be in [0,1] scale, max {}' \
-                                                    ' min {}'.format(np.max(mask),  np.min(mask))
+                                                    ' min {}'.format(np.max(mask), np.min(mask))
     binary_map = (mask > 0.5).astype(np.uint8)
-    num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(binary_map, connectivity=8, ltype=cv2.CV_32S)
+    num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(binary_map, connectivity=8,
+                                                                            ltype=cv2.CV_32S)
     centroids = centroids.astype(np.int32)
     lungs = []
 
