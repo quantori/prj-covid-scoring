@@ -6,10 +6,9 @@ import cv2
 import wandb
 import torch
 import numpy as np
-import albumentations as A
 import segmentation_models_pytorch as smp
 
-from tools.data_processing import log_datasets_files
+from tools.data_processing import log_dataset
 from tools.utils import EarlyStopping, divide_lung, separate_lungs
 
 
@@ -26,23 +25,21 @@ class SegmentationModel:
                  num_classes: int = 1,
                  class_name: str = 'COVID-19',
                  activation: str = 'sigmoid',
-                 sm_loss: str = 'Dice',
-                 clf_loss: str = None,
-                 w1: float = 0.5,
-                 w2: float = 0.5,
+                 loss_seg: str = 'Dice',
+                 loss_cls: str = None,
+                 weight_seg: float = 0.5,
+                 weight_cls: float = 0.5,
                  optimizer: str = 'AdamW',
                  lr: float = 0.0001,
                  es_patience: int = None,
                  es_min_delta: float = 0,
                  monitor_metric: str = 'fscore',
                  logging_labels: Dict[int, str] = None,
-                 augmentation_params: A.Compose = None,
                  save_dir: str = 'models',
                  wandb_api_key: str = 'b45cbe889f5dc79d1e9a0c54013e6ab8e8afb871',
                  wandb_project_name: str = 'covid_segmentation') -> None:
 
         # Dataset settings
-        self.augmentation_params = augmentation_params
         self.input_size = (input_size, input_size) if isinstance(input_size, int) else input_size
 
         # Device settings
@@ -59,10 +56,10 @@ class SegmentationModel:
         self.num_classes = num_classes
         self.class_name = class_name
         self.activation = activation
-        self.sm_loss = sm_loss
-        self.clf_loss = clf_loss
-        self.w1 = w1
-        self.w2 = w2
+        self.loss_seg = loss_seg
+        self.loss_cls = loss_cls
+        self.weight_seg = weight_seg
+        self.weight_cls = weight_cls
         self.optimizer = optimizer
         self.lr = lr
         self.es_patience = es_patience
@@ -90,8 +87,10 @@ class SegmentationModel:
             'classes': self.num_classes,
             'class_name': self.class_name,
             'activation': self.activation,
-            'sm_loss': self.sm_loss,
-            'clf_loss': self.clf_loss,
+            'loss_seg': self.loss_seg,
+            'loss_cls': self.loss_cls,
+            'weight_seg': self.weight_seg,
+            'weight_cls': self.weight_cls,
             'optimizer': self.optimizer,
             'lr': self.lr,
             'es_patience': self.es_patience,
@@ -148,12 +147,12 @@ class SegmentationModel:
             for idx, (image, mask, label) in enumerate(logging_loader):
                 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
                 image, mask, label = image.to(device), mask.to(device), label.to(device)
-                prediction = model(image)
-                if isinstance(prediction, tuple):
-                    prediction, clf_pred = prediction
-                    clf_pred = torch.squeeze(clf_pred)
-                    if clf_pred == 0:
-                        prediction = torch.zeros_like(prediction)
+                pred_seg = model(image)
+                if isinstance(pred_seg, tuple):
+                    pred_seg, pred_cls = pred_seg
+                    pred_cls = torch.squeeze(pred_cls)
+                    if pred_cls == 0:
+                        pred_seg = torch.zeros_like(pred_seg)
 
                 image_bg = torch.clone(image).squeeze(dim=0)
                 image_bg = image_bg.permute(1, 2, 0)
@@ -164,11 +163,11 @@ class SegmentationModel:
                 mask_gt = mask_gt.detach().cpu().numpy().astype(np.uint8)
                 mask_gt = cv2.resize(mask_gt, log_image_size, interpolation=cv2.INTER_NEAREST)
 
-                mask_pred = torch.clone(prediction).squeeze()
+                mask_pred = torch.clone(pred_seg).squeeze()
                 mask_pred = (mask_pred > 0.5).detach().cpu().numpy().astype(np.uint8)
                 mask_pred = cv2.resize(mask_pred, log_image_size, interpolation=cv2.INTER_NEAREST)
 
-                prob_map = torch.clone(prediction).squeeze()
+                prob_map = torch.clone(pred_seg).squeeze()
                 prob_map = (prob_map * 255).detach().cpu().numpy().astype(np.uint8)
                 prob_map = cv2.resize(prob_map, log_image_size, interpolation=cv2.INTER_CUBIC)
 
@@ -195,7 +194,8 @@ class SegmentationModel:
                                                                      self.input_size[1],
                                                                      self.in_channels) + '\033[0m')
         print('\033[92m' + 'Batch size:       {:d}'.format(self.batch_size) + '\033[0m')
-        print('\033[92m' + 'Sm_loss:          {:s}'.format(self.sm_loss) + '\033[0m')
+        print('\033[92m' + 'Seg. loss:        {:s}'.format(self.loss_seg) + '\033[0m')
+        print('\033[92m' + 'Cls. loss:        {:s}'.format(self.loss_cls) + '\033[0m')
         print('\033[92m' + 'Optimizer:        {:s}'.format(self.optimizer) + '\033[0m')
         print('\033[92m' + 'Learning rate:    {:.4f}'.format(self.lr) + '\033[0m')
         print('\033[92m' + 'Class count:      {:d}'.format(self.num_classes) + '\033[0m')
@@ -328,30 +328,28 @@ class SegmentationModel:
         return optimizer
 
     @staticmethod
-    def build_loss(sm_loss: str, clf_loss: str = None) -> (Any, Any):
-        if sm_loss == 'Dice':
-            sm_loss = smp.utils.losses.DiceLoss()
-        elif sm_loss == 'Jaccard':
-            sm_loss = smp.utils.losses.JaccardLoss()
-        elif sm_loss == 'BCE':
-            sm_loss = smp.utils.losses.BCELoss()
-        elif sm_loss == 'BCEL':
-            sm_loss = smp.utils.losses.BCEWithLogitsLoss()
+    def build_loss(loss_seg: str, loss_cls: str = None) -> (Any, Any):
+        if loss_seg == 'Dice':
+            loss_seg = smp.utils.losses.DiceLoss()
+        elif loss_seg == 'Jaccard':
+            loss_seg = smp.utils.losses.JaccardLoss()
+        elif loss_seg == 'BCE':
+            loss_seg = smp.utils.losses.BCELoss()
+        elif loss_seg == 'BCEL':
+            loss_seg = smp.utils.losses.BCEWithLogitsLoss()
         else:
-            raise ValueError('Unknown loss: {}'.format(sm_loss))
+            raise ValueError('Unknown loss: {}'.format(loss_seg))
 
-        if clf_loss is None:
+        # TODO (David): CrossEntropyLoss for 2 classes turns to BCELoss, so we don't need it here.
+        if loss_cls is None:
             pass
-        elif clf_loss == 'CrossEntropyLoss':
-            clf_loss = torch.nn.CrossEntropyLoss()
-            clf_loss.__name__ = 'CrossEntropyLoss'
-        elif clf_loss == 'BCELoss':
-            clf_loss = torch.nn.BCELoss()
-            clf_loss.__name__ = 'BCELoss'
+        elif loss_cls == 'BCE':
+            loss_cls = torch.nn.BCELoss()
+            loss_cls.__name__ = 'bce_cls_loss'
         else:
-            raise ValueError('Unknown loss: {}'.format(clf_loss))
+            raise ValueError('Unknown loss: {}'.format(loss_cls))
 
-        return sm_loss, clf_loss
+        return loss_seg, loss_cls
 
     def train(self,
               train_loader: torch.utils.data.dataloader.DataLoader,
@@ -369,7 +367,7 @@ class SegmentationModel:
         #                   os.path.join(self.model_dir, 'model.onnx'),
         #                   verbose=True)
         optimizer = self.build_optimizer(model=model, optimizer=self.optimizer, lr=self.lr)
-        sm_loss, clf_loss = self.build_loss(sm_loss=self.sm_loss, clf_loss=self.clf_loss)
+        loss_seg, loss_cls = self.build_loss(loss_seg=self.loss_seg, loss_cls=self.loss_cls)
 
         # Use self.find_lr once in order to find LR boundaries
         # self.find_lr(model=model, optimizer=optimizer, criterion=loss, train_loader=train_loader, val_loader=val_loader)
@@ -377,17 +375,22 @@ class SegmentationModel:
         es_callback = EarlyStopping(monitor_metric=self.monitor_metric,
                                     patience=self.es_patience,
                                     min_delta=self.es_min_delta)
+
+        # TODO (David): create classification and segmentation metrics with specific names i.e. name='fscore_seg'  or name='fscore_cls'
         metrics = [smp.utils.metrics.Fscore(threshold=0.5),
                    smp.utils.metrics.IoU(threshold=0.5),
                    smp.utils.metrics.Accuracy(threshold=0.5),
                    smp.utils.metrics.Precision(threshold=0.5),
                    smp.utils.metrics.Recall(threshold=0.5)]
-        train_epoch = smp.utils.train.TrainEpoch(model, loss1=sm_loss, loss2=clf_loss, w1=self.w1, w2=self.w2,
-                                                 metrics=metrics, optimizer=optimizer, device=self.device)
 
-        valid_epoch = smp.utils.train.ValidEpoch(model, loss1=sm_loss, loss2=clf_loss, w1=self.w1, w2=self.w2,
+        train_epoch = smp.utils.train.TrainEpoch(model, loss_seg=loss_seg, loss_cls=loss_cls,
+                                                 weight_seg=self.weight_seg, weight_cls=self.weight_cls,
+                                                 metrics=metrics, optimizer=optimizer, device=self.device)
+        valid_epoch = smp.utils.train.ValidEpoch(model, loss_seg=loss_seg, loss_cls=loss_cls,
+                                                 weight_seg=self.weight_seg, weight_cls=self.weight_cls,
                                                  metrics=metrics, stage_name='valid', device=self.device)
-        test_epoch = smp.utils.train.ValidEpoch(model, loss1=sm_loss, loss2=clf_loss, w1=self.w1, w2=self.w2,
+        test_epoch = smp.utils.train.ValidEpoch(model, loss_seg=loss_seg, loss_cls=loss_cls,
+                                                weight_seg=self.weight_seg, weight_cls=self.weight_cls,
                                                 metrics=metrics, stage_name='test', device=self.device)
 
         # Initialize W&B
@@ -401,7 +404,7 @@ class SegmentationModel:
             os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
             run = wandb.init(project=self.wandb_project_name, entity='viacheslav_danilov', name=self.run_name,
                              config=hyperparameters, tags=[self.model_name, self.encoder_name, self.encoder_weights])
-            log_datasets_files(run, [train_loader, val_loader, test_loader], artefact_name=self.class_name)
+            log_dataset(run, [train_loader, val_loader, test_loader], artefact_name=self.class_name)
 
         params = self._get_log_params(model, img_height=self.input_size[0], img_width=self.input_size[1], img_channels=self.in_channels)
         wandb.log(data=params, commit=False)
@@ -470,8 +473,8 @@ class TuningModel(SegmentationModel):
                  epochs: int = 30,
                  input_size: Union[int, List[int]] = (512, 512),
                  class_name: str = 'COVID-19',
-                 sm_loss: str = 'Dice',
-                 clf_loss: str = None,
+                 loss_seg: str = 'Dice',
+                 loss_cls: str = None,
                  optimizer: str = 'AdamW',
                  es_patience: int = None,
                  es_min_delta: float = 0,
@@ -486,8 +489,8 @@ class TuningModel(SegmentationModel):
         self.epochs = epochs
         self.input_size = (input_size, input_size) if isinstance(input_size, int) else input_size
         self.class_name = class_name
-        self.sm_loss = sm_loss
-        self.clf_loss = clf_loss
+        self.loss_seg = loss_seg
+        self.loss_cls = loss_cls
         self.optimizer = optimizer
         self.lr = lr
         self.es_patience = es_patience
@@ -503,21 +506,25 @@ class TuningModel(SegmentationModel):
 
         model = self.get_model()
         optimizer = self.build_optimizer(model=model, optimizer=self.optimizer, lr=self.lr)
-        sm_loss, clf_loss = self.build_loss(sm_loss=self.sm_loss, clf_loss=self.clf_loss)
+        loss_seg, loss_cls = self.build_loss(loss_seg=self.loss_seg, loss_cls=self.loss_cls)
         es_callback = EarlyStopping(monitor_metric=self.monitor_metric,
                                     patience=self.es_patience,
                                     min_delta=self.es_min_delta)
+
         metrics = [smp.utils.metrics.Fscore(threshold=0.5),
                    smp.utils.metrics.IoU(threshold=0.5),
                    smp.utils.metrics.Accuracy(threshold=0.5),
                    smp.utils.metrics.Precision(threshold=0.5),
                    smp.utils.metrics.Recall(threshold=0.5)]
-        train_epoch = smp.utils.train.TrainEpoch(model, loss1=sm_loss, loss2=clf_loss, w1=self.w1, w2=self.w2,
-                                                 metrics=metrics, optimizer=optimizer, device=self.device)
-        valid_epoch = smp.utils.train.ValidEpoch(model, loss1=sm_loss, loss2=clf_loss, w1=self.w1, w2=self.w2,
-                                                 metrics=metrics, stage_name='valid', device=self.device)
 
-        test_epoch = smp.utils.train.ValidEpoch(model, loss1=sm_loss, loss2=clf_loss, w1=self.w1, w2=self.w2,
+        train_epoch = smp.utils.train.TrainEpoch(model, loss_seg=loss_seg, loss_cls=loss_cls,
+                                                 weight_seg=self.weight_seg, weight_cls=self.weight_cls,
+                                                 metrics=metrics, optimizer=optimizer, device=self.device)
+        valid_epoch = smp.utils.train.ValidEpoch(model, loss_seg=loss_seg, loss_cls=loss_cls,
+                                                 weight_seg=self.weight_seg, weight_cls=self.weight_cls,
+                                                 metrics=metrics, stage_name='valid', device=self.device)
+        test_epoch = smp.utils.train.ValidEpoch(model, loss_seg=loss_seg, loss_cls=loss_cls,
+                                                weight_seg=self.weight_seg, weight_cls=self.weight_cls,
                                                 metrics=metrics, stage_name='test', device=self.device)
 
         params = self._get_log_params(model, img_height=self.input_size[0], img_width=self.input_size[1], img_channels=self.in_channels)
