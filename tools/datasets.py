@@ -38,8 +38,8 @@ class SegmentationDataset(Dataset):
 
         mask = convert_ann_to_mask(ann_path=ann_path, class_name=self.class_name)
 
-        mask_sum = torch.tensor((np.sum(mask) > 0).astype(np.int32), dtype=torch.int32)
-        mask_sum = torch.unsqueeze(mask_sum, -1).to(torch.float32)
+        _label = torch.tensor((np.sum(mask) > 0).astype(np.int32), dtype=torch.int32)
+        label = torch.unsqueeze(_label, -1).to(torch.float32)
 
         # Apply augmentation
         if self.augmentation_params:
@@ -66,7 +66,7 @@ class SegmentationDataset(Dataset):
             # transformed_mask = transforms.ToPILImage()(mask)
             # transformed_image.show()
             # transformed_mask.show()
-        return image, mask, mask_sum
+        return image, mask, label
 
 
 # TODO: Fix LungsCropper in order to crop images
@@ -166,4 +166,4 @@ if __name__ == '__main__':
                                   transform_params=None)
 
     for idx in range(30):
-        img, mask = dataset[idx]
+        img, mask, label = dataset[idx]
