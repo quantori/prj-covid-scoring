@@ -8,7 +8,7 @@ import segmentation_models_pytorch as smp
 from tools.models import SegmentationModel
 from tools.datasets import SegmentationDataset
 from tools.supervisely_tools import read_supervisely_project
-from tools.data_processing import split_data, covid_segmentation_labels
+from tools.data_processing import split_data, get_logging_labels
 
 
 def main(args):
@@ -21,7 +21,8 @@ def main(args):
                          dataset_names=dataset_names,
                          class_name=args.class_name,
                          seed=11,
-                         ratio=args.ratio)
+                         ratio=args.ratio,
+                         normal_datasets=['rsna_normal', 'chest_xray_normal'])
 
     preprocessing_params = smp.encoders.get_preprocessing_params(encoder_name=args.encoder_name,
                                                                  pretrained=args.encoder_weights)
@@ -80,16 +81,14 @@ def main(args):
                                           class_name=args.class_name,
                                           augmentation_params=None,
                                           transform_params=preprocessing_params)
-    logging_loader = DataLoader(logging_dataset, num_workers=num_workers)
+    logging_loader = DataLoader(logging_dataset, batch_size=1, num_workers=num_workers)
 
     aux_params = None
     if args.aux_params:
-        aux_params = dict(
-            pooling='avg',             # one of 'avg', 'max'
-            dropout=0.5,               # dropout ratio, default is None
-            activation='sigmoid',      # activation function, default is None
-            classes=1,                 # define number of output labels
-        )
+        aux_params = dict(pooling='avg',
+                          dropout=0.2,
+                          activation='sigmoid',
+                          classes=1)
 
     model = SegmentationModel(model_name=args.model_name,
                               encoder_name=args.encoder_name,
@@ -98,8 +97,8 @@ def main(args):
                               batch_size=args.batch_size,
                               epochs=args.epochs,
                               class_name=args.class_name,
-                              sm_loss=args.sm_loss,
-                              clf_loss=args.clf_loss,
+                              loss_seg=args.loss_seg,
+                              loss_cls=args.loss_cls,
                               optimizer=args.optimizer,
                               lr=args.lr,
                               es_patience=args.es_patience,
@@ -107,7 +106,7 @@ def main(args):
                               monitor_metric=args.monitor_metric,
                               input_size=args.input_size,
                               save_dir=args.save_dir,
-                              logging_labels=covid_segmentation_labels([args.class_name]),
+                              logging_labels=get_logging_labels([args.class_name]),
                               wandb_project_name=args.wandb_project_name,
                               wandb_api_key=args.wandb_api_key)
     model.train(train_loader, val_loader, test_loader, logging_loader)
@@ -124,9 +123,8 @@ if __name__ == '__main__':
     parser.add_argument('--encoder_name', default='resnet18', type=str)
     parser.add_argument('--encoder_weights', default='imagenet', type=str, help='imagenet, ssl or swsl')
     parser.add_argument('--batch_size', default=8, type=int)
-    parser.add_argument('--sm_loss', default='Dice', type=str, help='Dice, Jaccard, BCE or BCEL')
-    parser.add_argument('--clf_loss', default='BCELoss', type=str, help='BCELoss, CrossEntropyLoss') #BCELoss
-
+    parser.add_argument('--loss_seg', default='Dice', type=str, help='Dice, Jaccard, BCE or BCEL')
+    parser.add_argument('--loss_cls', default='BCE', type=str, help='BCE')              # TODO (David): Add 2-3 losses
     parser.add_argument('--optimizer', default='Adam', type=str, help='SGD, Adam, AdamW, RMSprop, Adam_amsgrad or AdamW_amsgrad')
     parser.add_argument('--lr', default=0.0001, type=float)
     parser.add_argument('--es_patience', default=10, type=int)

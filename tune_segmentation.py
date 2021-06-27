@@ -42,7 +42,8 @@ def main(config=None):
                              dataset_names=dataset_names,
                              class_name=config.class_name,
                              seed=11,
-                             ratio=args.ratio)
+                             ratio=args.ratio,
+                             normal_datasets=['rsna_normal', 'chest_xray_normal'])
 
         preprocessing_params = smp.encoders.get_preprocessing_params(encoder_name=config.encoder_name,
                                                                      pretrained=config.encoder_weights)
@@ -83,15 +84,13 @@ def main(config=None):
                   commit=False)
 
         aux_params = None
-        if config.aux_params:
-            aux_params = dict(
-                pooling='avg',  # one of 'avg', 'max'
-                dropout=0.5,  # dropout ratio, default is None
-                activation='sigmoid',  # activation function, default is None
-                classes=1,  # define number of output labels
-            )
+        if args.aux_params:
+            aux_params = dict(pooling='avg',
+                              dropout=0.2,
+                              activation='sigmoid',
+                              classes=1)
 
-        # Build model
+        # Build modelW
         model = TuningModel(model_name=config.model_name,
                             encoder_name=config.encoder_name,
                             encoder_weights=config.encoder_weights,
@@ -100,7 +99,7 @@ def main(config=None):
                             epochs=config.epochs,
                             input_size=config.input_size,
                             class_name=config.class_name,
-                            sm_loss=config.sm_loss,
+                            loss_seg=config.loss_seg,
                             optimizer=config.optimizer,
                             es_patience=args.es_patience,
                             es_min_delta=args.es_min_delta,
@@ -208,8 +207,8 @@ if __name__ == '__main__':
             # 'model_name': {'values': ['Unet']},
             'input_size': {'values': get_values(min=384, max=640, step=32, dtype=int)},
             # 'input_size': {'values': [512]},
-            'sm_loss': {'values': ['Dice', 'Jaccard', 'BCE', 'BCEL']},
-            'clf_loss': {'values': ['CrossEntropyLoss', 'BCELoss']},
+            'loss_seg': {'values': ['Dice', 'Jaccard', 'BCE', 'BCEL']},
+            'loss_cls': {'values': ['BCE']},                            # TODO (David): Add 2-3 losses
             # 'loss': {'values': ['Dice']},
             'optimizer': {'values': ['SGD', 'RMSprop', 'Adam', 'AdamW', 'Adam_amsgrad', 'AdamW_amsgrad']},
             # 'optimizer': {'values': ['Adam_amsgrad']},
@@ -230,7 +229,7 @@ if __name__ == '__main__':
     }
 
     sweep_id = wandb.sweep(sweep=sweep_config, entity='viacheslav_danilov', project=args.wandb_project_name)
-    wandb.agent(sweep_id=sweep_id, function=main, count=args.max_runs)
+    wandb.agent(sweep_id=sweep_id, function=main, count=args.max_runs, entity='viacheslav_danilov', project=args.wandb_project_name)
 
     # If the tuning is interrupted, use a specific sweep_id to keep tuning on the next call
     # wandb.agent(sweep_id='cvcok87o', function=main, count=args.max_runs, entity='viacheslav_danilov', project=args.wandb_project_name)
