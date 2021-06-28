@@ -17,6 +17,7 @@ from tools.models import TuningModel
 from tools.datasets import SegmentationDataset
 from tools.supervisely_tools import read_supervisely_project
 from tools.data_processing import split_data, convert_seconds_to_hms
+from tools.utils import LossBalancedTaskWeighting, StaticWeights
 
 
 def main(config=None):
@@ -86,9 +87,15 @@ def main(config=None):
         aux_params = None
         if args.aux_params:
             aux_params = dict(pooling='avg',
-                              dropout=0.2,
+                              dropout=0.5,
                               activation='sigmoid',
                               classes=1)
+
+        if not args.aux_params:
+            args.loss_cls = None
+
+        weights_strategy = StaticWeights(0.55, 0.45)
+        #weights_strategy = LossBalancedTaskWeighting(0.05)
 
         # Build modelW
         model = TuningModel(model_name=config.model_name,
@@ -100,6 +107,8 @@ def main(config=None):
                             input_size=config.input_size,
                             class_name=config.class_name,
                             loss_seg=config.loss_seg,
+                            loss_cls=config.loss_cls,
+                            weights_strategy=weights_strategy,
                             optimizer=config.optimizer,
                             es_patience=args.es_patience,
                             es_min_delta=args.es_min_delta,
@@ -208,7 +217,7 @@ if __name__ == '__main__':
             'input_size': {'values': get_values(min=384, max=640, step=32, dtype=int)},
             # 'input_size': {'values': [512]},
             'loss_seg': {'values': ['Dice', 'Jaccard', 'BCE', 'BCEL']},
-            'loss_cls': {'values': ['BCE']},                            # TODO (David): Add 2-3 losses
+            'loss_cls': {'values': ['BCE', 'SmoothL1Loss', 'L1Loss']},                            # TODO (David): Add 2-3 losses
             # 'loss': {'values': ['Dice']},
             'optimizer': {'values': ['SGD', 'RMSprop', 'Adam', 'AdamW', 'Adam_amsgrad', 'AdamW_amsgrad']},
             # 'optimizer': {'values': ['Adam_amsgrad']},

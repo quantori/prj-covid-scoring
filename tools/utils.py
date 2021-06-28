@@ -47,6 +47,55 @@ class EarlyStopping:
                 return False
 
 
+class LossBalancedTaskWeighting:
+    def __init__(self, alpha: float = 0.5):
+        self.w1 = 0
+        self.w2 = 0
+        self.alpha = alpha
+        self.first_batch_loss1 = None
+        self.first_batch_loss2 = None
+        self.current_loss1 = None
+        self.current_loss2 = None
+        self.first_batch_initialized = False
+
+    def init_current_losses(self, loss1, loss2):
+        self.current_loss1 = loss1
+        self.current_loss2 = loss2
+
+    def init_first_batch_losses(self, loss1, loss2):
+        if not self.first_batch_initialized:
+            self.first_batch_loss1 = loss1
+            self.first_batch_loss2 = loss2
+            self.first_batch_initialized = True
+
+    def get_weights(self):
+        self.w1 = (self.current_loss1 / self.first_batch_loss1) ** self.alpha
+        self.w2 = (self.current_loss2 / self.first_batch_loss2) ** self.alpha
+        return self.w1, self.w2
+
+    def batch_update(self, loss_seg_np, loss_cls_np):
+        self.init_first_batch_losses(loss_seg_np, loss_cls_np)
+        self.init_current_losses(loss_seg_np, loss_cls_np)
+
+    def end_of_iteration(self):
+        self.first_batch_initialized = False
+
+
+class StaticWeights:
+    def __init__(self, w1=0.55, w2=0.45):
+        self.w1 = w1
+        self.w2 = w2
+
+    def get_weights(self):
+        return self.w1, self.w2
+
+    def end_of_iteration(self):
+        pass
+
+    def batch_update(self, loss_seg_np, loss_cls_np):
+        pass
+
+
 def binary_search(img: np.array, threshold_start: int, threshold_end: int, optimal_area: float):
     assert len(img.shape) == 2, 'invalid shape'
     best_value = None

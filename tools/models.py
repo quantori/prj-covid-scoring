@@ -5,11 +5,12 @@ from typing import List, Dict, Tuple, Any, Union
 import cv2
 import wandb
 import torch
+
 import numpy as np
 import segmentation_models_pytorch as smp
 
 from tools.data_processing import log_dataset
-from tools.utils import EarlyStopping, divide_lung, separate_lungs
+from tools.utils import EarlyStopping, divide_lung, separate_lungs, LossBalancedTaskWeighting
 
 
 class SegmentationModel:
@@ -27,8 +28,7 @@ class SegmentationModel:
                  activation: str = 'sigmoid',
                  loss_seg: str = 'Dice',
                  loss_cls: str = None,
-                 weight_seg: float = 0.5,
-                 weight_cls: float = 0.5,
+                 weights_strategy=None,
                  optimizer: str = 'AdamW',
                  lr: float = 0.0001,
                  es_patience: int = None,
@@ -58,8 +58,7 @@ class SegmentationModel:
         self.activation = activation
         self.loss_seg = loss_seg
         self.loss_cls = loss_cls
-        self.weight_seg = weight_seg
-        self.weight_cls = weight_cls
+        self.weights_strategy = weights_strategy
         self.optimizer = optimizer
         self.lr = lr
         self.es_patience = es_patience
@@ -89,8 +88,6 @@ class SegmentationModel:
             'activation': self.activation,
             'loss_seg': self.loss_seg,
             'loss_cls': self.loss_cls,
-            'weight_seg': self.weight_seg,
-            'weight_cls': self.weight_cls,
             'optimizer': self.optimizer,
             'lr': self.lr,
             'es_patience': self.es_patience,
@@ -99,6 +96,14 @@ class SegmentationModel:
             'device': self.device
         }
         return hyperparameters
+
+    @staticmethod
+    def set_names(metrics: List, attributes: List):
+        assert len(metrics) == len(attributes), 'shapes of metrics and attributes aren\'t equal'
+        for idx, metric in enumerate(metrics):
+            metric._name = attributes[idx]
+
+        return metrics
 
     @staticmethod
     def _change_loss_name(metrics: Dict[str, float],
@@ -116,7 +121,7 @@ class SegmentationModel:
         _macs, _params = get_model_complexity_info(model, (img_channels, img_height, img_width),
                                                    as_strings=False, print_per_layer_stat=False, verbose=False)
         macs = round(_macs / 10. ** 9, 1)
-        params = round(_params / 10.**6, 1)
+        params = round(_params / 10. ** 6, 1)
         params = {'params': params, 'macs': macs}
         return params
 
@@ -136,8 +141,10 @@ class SegmentationModel:
     def _get_log_images(self,
                         model: Any,
                         log_image_size: Tuple[int, int],
-                        logging_loader: torch.utils.data.dataloader.DataLoader) -> Tuple[List[wandb.Image], List[wandb.Image]]:
+                        logging_loader: torch.utils.data.dataloader.DataLoader) -> Tuple[
+        List[wandb.Image], List[wandb.Image]]:
 
+        model.eval()
         mean = torch.tensor(logging_loader.dataset.transform_params['mean'])
         std = torch.tensor(logging_loader.dataset.transform_params['std'])
 
@@ -150,9 +157,8 @@ class SegmentationModel:
                 pred_seg = model(image)
                 if isinstance(pred_seg, tuple):
                     pred_seg, pred_cls = pred_seg
-                    pred_cls = torch.squeeze(pred_cls)
-                    if pred_cls == 0:
-                        pred_seg = torch.zeros_like(pred_seg)
+                    pred_cls = torch.round(pred_cls.view(-1))
+                    pred_seg = pred_seg * pred_cls.view(-1, 1, 1, 1)
 
                 image_bg = torch.clone(image).squeeze(dim=0)
                 image_bg = image_bg.permute(1, 2, 0)
@@ -182,6 +188,8 @@ class SegmentationModel:
                                                     masks={'Ground truth': {'mask_data': mask_gt,
                                                                             'class_labels': self.logging_labels}},
                                                     caption='Map {:d}'.format(idx + 1)))
+
+        model.train()
         return segmentation_masks, probability_maps
 
     def print_model_settings(self) -> None:
@@ -195,7 +203,10 @@ class SegmentationModel:
                                                                      self.in_channels) + '\033[0m')
         print('\033[92m' + 'Batch size:       {:d}'.format(self.batch_size) + '\033[0m')
         print('\033[92m' + 'Seg. loss:        {:s}'.format(self.loss_seg) + '\033[0m')
-        print('\033[92m' + 'Cls. loss:        {:s}'.format(self.loss_cls) + '\033[0m')
+        if self.loss_cls is None:
+            print('\033[92m' + 'Cls. loss:        {:s}'.format('None') + '\033[0m')
+        else:
+            print('\033[92m' + 'Cls. loss:        {:s}'.format(self.loss_cls) + '\033[0m')
         print('\033[92m' + 'Optimizer:        {:s}'.format(self.optimizer) + '\033[0m')
         print('\033[92m' + 'Learning rate:    {:.4f}'.format(self.lr) + '\033[0m')
         print('\033[92m' + 'Class count:      {:d}'.format(self.num_classes) + '\033[0m')
@@ -286,6 +297,13 @@ class SegmentationModel:
                             classes=self.num_classes,
                             activation=self.activation,
                             aux_params=self.aux_params)
+        elif self.model_name == 'MAnet':
+            model = smp.MAnet(encoder_name=self.encoder_name,
+                              encoder_weights=self.encoder_weights,
+                              in_channels=self.in_channels,
+                              classes=self.num_classes,
+                              activation=self.activation,
+                              aux_params=self.aux_params)
         else:
             raise ValueError('Unknown model name:'.format(self.model_name))
 
@@ -337,15 +355,24 @@ class SegmentationModel:
             loss_seg = smp.utils.losses.BCELoss()
         elif loss_seg == 'BCEL':
             loss_seg = smp.utils.losses.BCEWithLogitsLoss()
+        elif loss_seg == 'LovaszLoss':
+            loss_seg = smp.losses.LovaszLoss(mode='binary')
+        elif loss_seg == 'FocalLoss':
+            loss_seg = smp.losses.FocalLoss(mode='binary')
         else:
             raise ValueError('Unknown loss: {}'.format(loss_seg))
 
-        # TODO (David): CrossEntropyLoss for 2 classes turns to BCELoss, so we don't need it here.
         if loss_cls is None:
             pass
         elif loss_cls == 'BCE':
             loss_cls = torch.nn.BCELoss()
             loss_cls.__name__ = 'bce_cls_loss'
+        elif loss_cls == 'SmoothL1Loss':
+            loss_cls = torch.nn.SmoothL1Loss()
+            loss_cls.__name__ = 'smooth_l1_loss'
+        elif loss_cls == 'L1Loss':
+            loss_cls = torch.nn.L1Loss()
+            loss_cls.__name__ = 'l1_loss'
         else:
             raise ValueError('Unknown loss: {}'.format(loss_cls))
 
@@ -376,22 +403,36 @@ class SegmentationModel:
                                     patience=self.es_patience,
                                     min_delta=self.es_min_delta)
 
-        # TODO (David): create classification and segmentation metrics with specific names i.e. name='fscore_seg'  or name='fscore_cls'
-        metrics = [smp.utils.metrics.Fscore(threshold=0.5),
-                   smp.utils.metrics.IoU(threshold=0.5),
-                   smp.utils.metrics.Accuracy(threshold=0.5),
-                   smp.utils.metrics.Precision(threshold=0.5),
-                   smp.utils.metrics.Recall(threshold=0.5)]
+        metrics_seg = [smp.utils.metrics.Fscore(threshold=0.5),
+                       smp.utils.metrics.IoU(threshold=0.5),
+                       smp.utils.metrics.Accuracy(threshold=0.5),
+                       smp.utils.metrics.Precision(threshold=0.5),
+                       smp.utils.metrics.Recall(threshold=0.5)]
+        metrics_seg = SegmentationModel.set_names(metrics_seg,
+                                                  ['fscore_seg', 'iou_seg', 'accuracy_seg', 'precision_seg',
+                                                   'recall_seg'])
+
+        metrics_cls = [smp.utils.metrics.Accuracy(threshold=0.5),
+                       smp.utils.metrics.Precision(threshold=0.5),
+                       smp.utils.metrics.Recall(threshold=0.5),
+                       smp.utils.metrics.Fscore(threshold=0.5)]
+
+        metrics_cls = SegmentationModel.set_names(metrics_cls, ['accuracy_cls', 'precision_cls', 'recall_cls', 'f1_cls'])
 
         train_epoch = smp.utils.train.TrainEpoch(model, loss_seg=loss_seg, loss_cls=loss_cls,
-                                                 weight_seg=self.weight_seg, weight_cls=self.weight_cls,
-                                                 metrics=metrics, optimizer=optimizer, device=self.device)
+                                                 weights_strategy=self.weights_strategy,
+                                                 metrics_seg=metrics_seg, metrics_cls=metrics_cls, optimizer=optimizer,
+                                                 device=self.device)
+
         valid_epoch = smp.utils.train.ValidEpoch(model, loss_seg=loss_seg, loss_cls=loss_cls,
-                                                 weight_seg=self.weight_seg, weight_cls=self.weight_cls,
-                                                 metrics=metrics, stage_name='valid', device=self.device)
+                                                 weights_strategy=self.weights_strategy,
+                                                 metrics_seg=metrics_seg, metrics_cls=metrics_cls, stage_name='valid',
+                                                 device=self.device)
+
         test_epoch = smp.utils.train.ValidEpoch(model, loss_seg=loss_seg, loss_cls=loss_cls,
-                                                weight_seg=self.weight_seg, weight_cls=self.weight_cls,
-                                                metrics=metrics, stage_name='test', device=self.device)
+                                                weights_strategy=self.weights_strategy,
+                                                metrics_seg=metrics_seg, metrics_cls=metrics_cls, stage_name='test',
+                                                device=self.device)
 
         # Initialize W&B
         if not self.wandb_api_key is None:
@@ -406,7 +447,8 @@ class SegmentationModel:
                              config=hyperparameters, tags=[self.model_name, self.encoder_name, self.encoder_weights])
             log_dataset(run, [train_loader, val_loader, test_loader], artefact_name=self.class_name)
 
-        params = self._get_log_params(model, img_height=self.input_size[0], img_width=self.input_size[1], img_channels=self.in_channels)
+        params = self._get_log_params(model, img_height=self.input_size[0], img_width=self.input_size[1],
+                                      img_channels=self.in_channels)
         wandb.log(data=params, commit=False)
 
         best_train_score, mode = (np.inf, 'min') if 'loss' in self.monitor_metric else (-np.inf, 'max')
@@ -443,9 +485,9 @@ class SegmentationModel:
                     best_test_score = test_logs[self.monitor_metric]
                     wandb.log(data={'best/test_score': best_test_score, 'best/test_epoch': epoch}, commit=False)
 
-            metrics = self._get_log_metrics(train_logs, val_logs, test_logs)
+            metrics_seg = self._get_log_metrics(train_logs, val_logs, test_logs)
             masks, maps = self._get_log_images(model=model, log_image_size=(1000, 1000), logging_loader=logging_loader)
-            wandb.log(data=metrics, commit=False)
+            wandb.log(data=metrics_seg, commit=False)
             wandb.log(data={'Segmentation masks': masks, 'Probability maps': maps})
 
             es_callback(val_logs)
@@ -475,6 +517,7 @@ class TuningModel(SegmentationModel):
                  class_name: str = 'COVID-19',
                  loss_seg: str = 'Dice',
                  loss_cls: str = None,
+                 weights_strategy=None,
                  optimizer: str = 'AdamW',
                  es_patience: int = None,
                  es_min_delta: float = 0,
@@ -491,6 +534,7 @@ class TuningModel(SegmentationModel):
         self.class_name = class_name
         self.loss_seg = loss_seg
         self.loss_cls = loss_cls
+        self.weights_strategy = weights_strategy
         self.optimizer = optimizer
         self.lr = lr
         self.es_patience = es_patience
@@ -511,23 +555,39 @@ class TuningModel(SegmentationModel):
                                     patience=self.es_patience,
                                     min_delta=self.es_min_delta)
 
-        metrics = [smp.utils.metrics.Fscore(threshold=0.5),
-                   smp.utils.metrics.IoU(threshold=0.5),
-                   smp.utils.metrics.Accuracy(threshold=0.5),
-                   smp.utils.metrics.Precision(threshold=0.5),
-                   smp.utils.metrics.Recall(threshold=0.5)]
+        metrics_seg = [smp.utils.metrics.Fscore(threshold=0.5),
+                       smp.utils.metrics.IoU(threshold=0.5),
+                       smp.utils.metrics.Accuracy(threshold=0.5),
+                       smp.utils.metrics.Precision(threshold=0.5),
+                       smp.utils.metrics.Recall(threshold=0.5)]
+        metrics_seg = SegmentationModel.set_names(metrics_seg,
+                                                  ['fscore_seg', 'iou_seg', 'accuracy_seg', 'precision_seg',
+                                                   'recall_seg'])
+
+        metrics_cls = [smp.utils.metrics.Accuracy(threshold=0.5),
+                       smp.utils.metrics.Precision(threshold=0.5),
+                       smp.utils.metrics.Recall(threshold=0.5),
+                       smp.utils.metrics.Fscore(threshold=0.5)]
+
+        metrics_cls = SegmentationModel.set_names(metrics_cls, ['accuracy_cls', 'precision_cls', 'recall_cls', 'f1_cls'])
 
         train_epoch = smp.utils.train.TrainEpoch(model, loss_seg=loss_seg, loss_cls=loss_cls,
-                                                 weight_seg=self.weight_seg, weight_cls=self.weight_cls,
-                                                 metrics=metrics, optimizer=optimizer, device=self.device)
-        valid_epoch = smp.utils.train.ValidEpoch(model, loss_seg=loss_seg, loss_cls=loss_cls,
-                                                 weight_seg=self.weight_seg, weight_cls=self.weight_cls,
-                                                 metrics=metrics, stage_name='valid', device=self.device)
-        test_epoch = smp.utils.train.ValidEpoch(model, loss_seg=loss_seg, loss_cls=loss_cls,
-                                                weight_seg=self.weight_seg, weight_cls=self.weight_cls,
-                                                metrics=metrics, stage_name='test', device=self.device)
+                                                 weights_strategy=self.weights_strategy,
+                                                 metrics_seg=metrics_seg, metrics_cls=metrics_cls, optimizer=optimizer,
+                                                 device=self.device)
 
-        params = self._get_log_params(model, img_height=self.input_size[0], img_width=self.input_size[1], img_channels=self.in_channels)
+        valid_epoch = smp.utils.train.ValidEpoch(model, loss_seg=loss_seg, loss_cls=loss_cls,
+                                                 weights_strategy=self.weights_strategy,
+                                                 metrics_seg=metrics_seg, metrics_cls=metrics_cls, stage_name='valid',
+                                                 device=self.device)
+
+        test_epoch = smp.utils.train.ValidEpoch(model, loss_seg=loss_seg, loss_cls=loss_cls,
+                                                weights_strategy=self.weights_strategy,
+                                                metrics_seg=metrics_seg, metrics_cls=metrics_cls, stage_name='test',
+                                                device=self.device)
+
+        params = self._get_log_params(model, img_height=self.input_size[0], img_width=self.input_size[1],
+                                      img_channels=self.in_channels)
         wandb.log(data=params, commit=False)
 
         best_train_score, mode = (np.inf, 'min') if 'loss' in self.monitor_metric else (-np.inf, 'max')
