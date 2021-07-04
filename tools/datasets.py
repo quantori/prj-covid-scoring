@@ -149,6 +149,22 @@ class LungsCropper(Dataset):
         return image, mask
 
 
+class InferenceDataset(Dataset):
+    def __init__(self,
+                 full_img_paths: List[str],
+                 input_size: Union[int, List[int]] = (512, 512)):
+        self.full_img_paths = full_img_paths
+        self.input_size = (input_size, input_size) if isinstance(input_size, int) else input_size
+
+    def __len__(self):
+        return len(self.full_img_paths)
+
+    def __getitem__(self, idx):
+        img = cv2.imread(self.full_img_paths[idx])
+        img = cv2.resize(img, self.input_size)
+        return img, self.full_img_paths[idx]
+
+
 if __name__ == '__main__':
 
     # The code snippet below is used only for debugging

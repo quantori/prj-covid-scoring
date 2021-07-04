@@ -5,12 +5,14 @@ from typing import List, Dict, Tuple, Any, Union
 import cv2
 import wandb
 import torch
+import torchvision.transforms as transforms
 
 import numpy as np
+from PIL import Image
 import segmentation_models_pytorch as smp
 
 from tools.data_processing import log_dataset
-from tools.utils import EarlyStopping, divide_lung, separate_lungs, LossBalancedTaskWeighting
+from tools.utils import EarlyStopping, divide_lung, find_obj_bbox, separate_lungs, LossBalancedTaskWeighting
 
 
 class SegmentationModel:
@@ -417,7 +419,8 @@ class SegmentationModel:
                        smp.utils.metrics.Recall(threshold=0.5),
                        smp.utils.metrics.Fscore(threshold=0.5)]
 
-        metrics_cls = SegmentationModel.set_names(metrics_cls, ['accuracy_cls', 'precision_cls', 'recall_cls', 'f1_cls'])
+        metrics_cls = SegmentationModel.set_names(metrics_cls,
+                                                  ['accuracy_cls', 'precision_cls', 'recall_cls', 'f1_cls'])
 
         train_epoch = smp.utils.train.TrainEpoch(model, loss_seg=loss_seg, loss_cls=loss_cls,
                                                  weights_strategy=self.weights_strategy,
@@ -569,7 +572,8 @@ class TuningModel(SegmentationModel):
                        smp.utils.metrics.Recall(threshold=0.5),
                        smp.utils.metrics.Fscore(threshold=0.5)]
 
-        metrics_cls = SegmentationModel.set_names(metrics_cls, ['accuracy_cls', 'precision_cls', 'recall_cls', 'f1_cls'])
+        metrics_cls = SegmentationModel.set_names(metrics_cls,
+                                                  ['accuracy_cls', 'precision_cls', 'recall_cls', 'f1_cls'])
 
         train_epoch = smp.utils.train.TrainEpoch(model, loss_seg=loss_seg, loss_cls=loss_cls,
                                                  weights_strategy=self.weights_strategy,
@@ -636,20 +640,102 @@ class CovidScoringNet:
     def __init__(self,
                  lungs_segmentation_model,
                  covid_segmentation_model,
-                 threshold: float):
+                 device,
+                 threshold: float,
+                 input_size: Union[int, List[int]] = (512, 512),
+                 covid_preprocessing=None,
+                 lung_preprocessing=None,
+                 flag_type: str = None):
         assert 0 <= threshold <= 1, 'Threshold value is in an incorrect scale. It should be in the range [0,1].'
-        self.lungs_segmentation = lungs_segmentation_model
-        self.covid_segmentation = covid_segmentation_model
+        assert flag_type in ['no_crop', 'crop', 'single_crop'], 'invalid flag type'
+
+        self.lungs_segmentation = lungs_segmentation_model.to(device).eval()
+        self.covid_segmentation = covid_segmentation_model.to(device).eval()
+        self.device = device
         self.threshold = threshold
+        self.input_size = (input_size, input_size) if isinstance(input_size, int) else input_size
+        self.covid_preprocessing = covid_preprocessing
+        self.lung_preprocessing = lung_preprocessing
+        self.flag_type = flag_type
+
+        self.preprocess_image_covid = transforms.Compose([transforms.ToTensor(),
+                                                          transforms.Resize(size=self.input_size,
+                                                                            interpolation=Image.BICUBIC),
+                                                          transforms.Normalize(mean=self.covid_preprocessing['mean'],
+                                                                               std=self.covid_preprocessing['std'])])
+        self.preprocess_image_lung = transforms.Compose([transforms.ToTensor(),
+                                                         transforms.Resize(size=self.input_size,
+                                                                           interpolation=Image.BICUBIC),
+                                                         transforms.Normalize(mean=self.lung_preprocessing['mean'],
+                                                                              std=self.lung_preprocessing['std'])])
 
     def __call__(self, img):
         return self.predict(img)
 
-    def predict(self, img):
-        assert img.shape[0:2] == (1, 3), 'Incorrect image dimensions'
-        lungs_predicted = self.lungs_segmentation(img)[0, 0, :, :].cpu().detach().numpy()
-        covid_predicted = self.covid_segmentation(img)[0, 0, :, :].cpu().detach().numpy()
+    def eval(self):
+        self.lungs_segmentation.eval()
+        self.covid_segmentation.eval()
 
+    def predict_masks(self, source_img):
+        img = torch.unsqueeze(self.preprocess_image_lung(source_img), dim=0).to(self.device)
+
+        if self.flag_type == 'no_crop':
+            lungs_predicted = self.lungs_segmentation(img)[0, 0, :, :].cpu().detach().numpy()
+            covid_predicted = self.covid_segmentation(img)
+            if isinstance(covid_predicted, tuple):
+                covid_predicted, pred_cls = covid_predicted
+                pred_cls = torch.round(pred_cls.view(-1))
+                covid_predicted = covid_predicted * pred_cls.view(-1, 1, 1, 1)
+
+            covid_predicted = covid_predicted[0, 0, :, :].cpu().detach().numpy()
+            return lungs_predicted, covid_predicted
+
+        if self.flag_type == 'crop':
+            lungs_predicted = self.lungs_segmentation(img).permute(0, 2, 3, 1).cpu().detach().numpy()[0, :, :, :] > 0.5
+            crop_lungs = source_img * lungs_predicted
+
+            processed_cropped_lung_mask = torch.unsqueeze(self.preprocess_image_covid(crop_lungs), dim=0)
+            processed_cropped_lung_mask = processed_cropped_lung_mask.to(self.device)
+
+            covid_predicted = self.covid_segmentation(processed_cropped_lung_mask)
+            if isinstance(covid_predicted, tuple):
+                covid_predicted, pred_cls = covid_predicted
+                pred_cls = torch.round(pred_cls.view(-1))
+                covid_predicted = covid_predicted * pred_cls.view(-1, 1, 1, 1)
+
+            covid_predicted = covid_predicted.cpu().detach().numpy()[0, 0, :, :]
+            lungs_predicted = lungs_predicted[:, :, 0]
+            return lungs_predicted, covid_predicted
+
+        if self.flag_type == 'single_crop':
+            lungs_predicted = self.lungs_segmentation(img).permute(0, 2, 3, 1).cpu().detach().numpy()[0, :, :, :] > 0.5
+            crop_lungs = source_img * lungs_predicted
+
+            bbox_coordinates = find_obj_bbox(lungs_predicted)
+            bbox_min_x = np.min([x[0] for x in bbox_coordinates])
+            bbox_min_y = np.min([x[1] for x in bbox_coordinates])
+            bbox_max_x = np.max([x[2] for x in bbox_coordinates])
+            bbox_max_y = np.max([x[3] for x in bbox_coordinates])
+
+            single_cropped_lung_mask = crop_lungs[bbox_min_y:bbox_max_y, bbox_min_x:bbox_max_x]
+            single_cropped_lung_mask = cv2.resize(single_cropped_lung_mask, (512, 512))
+            processed_single_cropped_lung_mask = torch.unsqueeze(self.preprocess_image_covid(single_cropped_lung_mask), dim=0)
+            processed_single_cropped_lung_mask = processed_single_cropped_lung_mask.to(self.device)
+
+            single_cropped_covid_mask = self.covid_segmentation(processed_single_cropped_lung_mask)
+            if isinstance(single_cropped_covid_mask, tuple):
+                single_cropped_covid_mask, pred_cls = single_cropped_covid_mask
+                pred_cls = torch.round(pred_cls.view(-1))
+                single_cropped_covid_mask = single_cropped_covid_mask * pred_cls.view(-1, 1, 1, 1)
+
+            single_cropped_covid_mask = single_cropped_covid_mask.permute(0, 2, 3, 1).cpu().detach().numpy()[0, :, :, 0]
+            single_cropped_lung_mask = single_cropped_lung_mask[:, :, 0]
+            return single_cropped_lung_mask, single_cropped_covid_mask
+
+    def predict(self, source_img):
+        assert source_img.shape[2] == 3, 'Incorrect image dimensions'
+
+        lungs_predicted, covid_predicted = self.predict_masks(source_img)
         # TODO (David): Estimate optimal thresholds for lungs and covid predictions
         # TODO (David): https://quantori.atlassian.net/wiki/spaces/PRJVOL/pages/2253324439/May+7+2021#3.-Results
         # TODO (David): https://towardsdatascience.com/fine-tuning-a-classifier-in-scikit-learn-66e048c21e65
