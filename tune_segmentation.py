@@ -108,6 +108,7 @@ def main(config=None):
                             class_name=config.class_name,
                             loss_seg=config.loss_seg,
                             loss_cls=config.loss_cls,
+                            threshold=config.threshold,
                             weights_strategy=weights_strategy,
                             optimizer=config.optimizer,
                             es_patience=args.es_patience,
@@ -215,6 +216,8 @@ if __name__ == '__main__':
             'model_name': {'values': ['Unet', 'Unet++', 'DeepLabV3', 'DeepLabV3+', 'FPN', 'Linknet', 'PSPNet', 'PAN']},
             # 'model_name': {'values': ['Unet']},
             'input_size': {'values': get_values(min=384, max=640, step=32, dtype=int)},
+            'threshold': {'values': get_values(min=0, max=1, step=0.1, dtype=float)},
+
             # 'input_size': {'values': [512]},
             'loss_seg': {'values': ['Dice', 'Jaccard', 'BCE', 'BCEL']},
             'loss_cls': {'values': ['BCE', 'SmoothL1Loss', 'L1Loss']},                            # TODO (David): Add 2-3 losses

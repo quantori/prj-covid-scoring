@@ -106,6 +106,7 @@ def main(args):
                               class_name=args.class_name,
                               loss_seg=args.loss_seg,
                               loss_cls=args.loss_cls,
+                              threshold=args.threshold,
                               weights_strategy=weights_strategy,
                               optimizer=args.optimizer,
                               lr=args.lr,
@@ -133,6 +134,8 @@ if __name__ == '__main__':
     parser.add_argument('--batch_size', default=8, type=int)
     parser.add_argument('--loss_seg', default='Dice', type=str, help='Dice, Jaccard, BCE or BCEL')
     parser.add_argument('--loss_cls', default='BCE', type=str, help='BCE, L1Loss, SmoothL1Loss') #BCE, L1Loss, SmoothL1Loss
+    parser.add_argument('--threshold', default=0.5, type=float)  # BCE, L1Loss, SmoothL1Loss
+
     parser.add_argument('--optimizer', default='Adam', type=str, help='SGD, Adam, AdamW, RMSprop, Adam_amsgrad or AdamW_amsgrad')
     parser.add_argument('--lr', default=0.0001, type=float)
     parser.add_argument('--es_patience', default=10, type=int)

@@ -28,6 +28,7 @@ class SegmentationModel:
                  activation: str = 'sigmoid',
                  loss_seg: str = 'Dice',
                  loss_cls: str = None,
+                 threshold: float = 0.5,
                  weights_strategy=None,
                  optimizer: str = 'AdamW',
                  lr: float = 0.0001,
@@ -58,6 +59,7 @@ class SegmentationModel:
         self.activation = activation
         self.loss_seg = loss_seg
         self.loss_cls = loss_cls
+        self.threshold = threshold
         self.weights_strategy = weights_strategy
         self.optimizer = optimizer
         self.lr = lr
@@ -403,35 +405,35 @@ class SegmentationModel:
                                     patience=self.es_patience,
                                     min_delta=self.es_min_delta)
 
-        metrics_seg = [smp.utils.metrics.Fscore(threshold=0.5),
-                       smp.utils.metrics.IoU(threshold=0.5),
-                       smp.utils.metrics.Accuracy(threshold=0.5),
-                       smp.utils.metrics.Precision(threshold=0.5),
-                       smp.utils.metrics.Recall(threshold=0.5)]
+        metrics_seg = [smp.utils.metrics.Fscore(threshold=self.threshold),
+                       smp.utils.metrics.IoU(threshold=self.threshold),
+                       smp.utils.metrics.Accuracy(threshold=self.threshold),
+                       smp.utils.metrics.Precision(threshold=self.threshold),
+                       smp.utils.metrics.Recall(threshold=self.threshold)]
         metrics_seg = SegmentationModel.set_names(metrics_seg,
                                                   ['fscore_seg', 'iou_seg', 'accuracy_seg', 'precision_seg',
                                                    'recall_seg'])
 
-        metrics_cls = [smp.utils.metrics.Accuracy(threshold=0.5),
-                       smp.utils.metrics.Precision(threshold=0.5),
-                       smp.utils.metrics.Recall(threshold=0.5),
-                       smp.utils.metrics.Fscore(threshold=0.5)]
+        metrics_cls = [smp.utils.metrics.Accuracy(threshold=self.threshold),
+                       smp.utils.metrics.Precision(threshold=self.threshold),
+                       smp.utils.metrics.Recall(threshold=self.threshold),
+                       smp.utils.metrics.Fscore(threshold=self.threshold)]
 
         metrics_cls = SegmentationModel.set_names(metrics_cls, ['accuracy_cls', 'precision_cls', 'recall_cls', 'f1_cls'])
 
         train_epoch = smp.utils.train.TrainEpoch(model, loss_seg=loss_seg, loss_cls=loss_cls,
-                                                 weights_strategy=self.weights_strategy,
-                                                 metrics_seg=metrics_seg, metrics_cls=metrics_cls, optimizer=optimizer,
+                                                 weights_strategy=self.weights_strategy,metrics_seg=metrics_seg,
+                                                 metrics_cls=metrics_cls, threshold=self.threshold, optimizer=optimizer,
                                                  device=self.device)
 
         valid_epoch = smp.utils.train.ValidEpoch(model, loss_seg=loss_seg, loss_cls=loss_cls,
-                                                 weights_strategy=self.weights_strategy,
-                                                 metrics_seg=metrics_seg, metrics_cls=metrics_cls, stage_name='valid',
+                                                 weights_strategy=self.weights_strategy, metrics_seg=metrics_seg,
+                                                 metrics_cls=metrics_cls, threshold=self.threshold, stage_name='valid',
                                                  device=self.device)
 
         test_epoch = smp.utils.train.ValidEpoch(model, loss_seg=loss_seg, loss_cls=loss_cls,
-                                                weights_strategy=self.weights_strategy,
-                                                metrics_seg=metrics_seg, metrics_cls=metrics_cls, stage_name='test',
+                                                weights_strategy=self.weights_strategy, metrics_seg=metrics_seg,
+                                                metrics_cls=metrics_cls, threshold=self.threshold, stage_name='test',
                                                 device=self.device)
 
         # Initialize W&B
@@ -517,6 +519,7 @@ class TuningModel(SegmentationModel):
                  class_name: str = 'COVID-19',
                  loss_seg: str = 'Dice',
                  loss_cls: str = None,
+                 threshold: float = 0.5,
                  weights_strategy=None,
                  optimizer: str = 'AdamW',
                  es_patience: int = None,
@@ -534,6 +537,7 @@ class TuningModel(SegmentationModel):
         self.class_name = class_name
         self.loss_seg = loss_seg
         self.loss_cls = loss_cls
+        self.threshold = threshold
         self.weights_strategy = weights_strategy
         self.optimizer = optimizer
         self.lr = lr
@@ -555,34 +559,34 @@ class TuningModel(SegmentationModel):
                                     patience=self.es_patience,
                                     min_delta=self.es_min_delta)
 
-        metrics_seg = [smp.utils.metrics.Fscore(threshold=0.5),
-                       smp.utils.metrics.IoU(threshold=0.5),
-                       smp.utils.metrics.Accuracy(threshold=0.5),
-                       smp.utils.metrics.Precision(threshold=0.5),
-                       smp.utils.metrics.Recall(threshold=0.5)]
+        metrics_seg = [smp.utils.metrics.Fscore(threshold=self.threshold),
+                       smp.utils.metrics.IoU(threshold=self.threshold),
+                       smp.utils.metrics.Accuracy(threshold=self.threshold),
+                       smp.utils.metrics.Precision(threshold=self.threshold),
+                       smp.utils.metrics.Recall(threshold=self.threshold)]
         metrics_seg = SegmentationModel.set_names(metrics_seg,
                                                   ['fscore_seg', 'iou_seg', 'accuracy_seg', 'precision_seg',
                                                    'recall_seg'])
 
-        metrics_cls = [smp.utils.metrics.Accuracy(threshold=0.5),
-                       smp.utils.metrics.Precision(threshold=0.5),
-                       smp.utils.metrics.Recall(threshold=0.5),
-                       smp.utils.metrics.Fscore(threshold=0.5)]
+        metrics_cls = [smp.utils.metrics.Accuracy(threshold=self.threshold),
+                       smp.utils.metrics.Precision(threshold=self.threshold),
+                       smp.utils.metrics.Recall(threshold=self.threshold),
+                       smp.utils.metrics.Fscore(threshold=self.threshold)]
 
         metrics_cls = SegmentationModel.set_names(metrics_cls, ['accuracy_cls', 'precision_cls', 'recall_cls', 'f1_cls'])
 
         train_epoch = smp.utils.train.TrainEpoch(model, loss_seg=loss_seg, loss_cls=loss_cls,
-                                                 weights_strategy=self.weights_strategy,
+                                                 weights_strategy=self.weights_strategy, threshold=self.threshold,
                                                  metrics_seg=metrics_seg, metrics_cls=metrics_cls, optimizer=optimizer,
                                                  device=self.device)
 
         valid_epoch = smp.utils.train.ValidEpoch(model, loss_seg=loss_seg, loss_cls=loss_cls,
-                                                 weights_strategy=self.weights_strategy,
+                                                 weights_strategy=self.weights_strategy, threshold=self.threshold,
                                                  metrics_seg=metrics_seg, metrics_cls=metrics_cls, stage_name='valid',
                                                  device=self.device)
 
         test_epoch = smp.utils.train.ValidEpoch(model, loss_seg=loss_seg, loss_cls=loss_cls,
-                                                weights_strategy=self.weights_strategy,
+                                                weights_strategy=self.weights_strategy, threshold=self.threshold,
                                                 metrics_seg=metrics_seg, metrics_cls=metrics_cls, stage_name='test',
                                                 device=self.device)
 
