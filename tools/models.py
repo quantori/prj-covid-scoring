@@ -104,7 +104,6 @@ class SegmentationModel:
         assert len(metrics) == len(attributes), 'shapes of metrics and attributes aren\'t equal'
         for idx, metric in enumerate(metrics):
             metric._name = attributes[idx]
-
         return metrics
 
     @staticmethod
