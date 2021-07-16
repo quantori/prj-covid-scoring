@@ -104,3 +104,17 @@ def divide_lung(lung: np.array):
     img3 = cv2.rotate(pad_3, cv2.ROTATE_90_COUNTERCLOCKWISE)
 
     return img1, img2, img3
+
+
+def find_obj_bbox(mask: np.array):
+    assert np.max(mask) <= 1 and np.min(mask) >= 0, 'mask values should be in [0,1] scale, max {}' \
+                                                    ' min {}'.format(np.max(mask),  np.min(mask))
+    binary_map = (mask > 0.5).astype(np.uint8)
+    num_labels, _, stats, _ = cv2.connectedComponentsWithStats(binary_map, connectivity=8, ltype=cv2.CV_32S)
+    bbox_coordinates = []
+
+    for i in range(1, num_labels):
+        x0, y0 = stats[i, cv2.CC_STAT_LEFT], stats[i, cv2.CC_STAT_TOP]
+        x1, y1 = x0 + stats[i, cv2.CC_STAT_WIDTH], y0 + stats[i, cv2.CC_STAT_HEIGHT]
+        bbox_coordinates.append((x0, y0, x1, y1))
+    return bbox_coordinates
