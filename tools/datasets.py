@@ -31,14 +31,17 @@ class SegmentationDataset(Dataset):
     def __len__(self):
         return len(self.img_paths)
 
-    def __getitem__(self,
-                    idx: int) -> Tuple[np.ndarray, np.ndarray]:
+    def __getitem__(self, idx: int):
+
         image_path = self.img_paths[idx]
         ann_path = self.ann_paths[idx]
         image = cv2.imread(image_path)
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
         mask = convert_ann_to_mask(ann_path=ann_path, class_name=self.class_name)
+
+        _label = torch.tensor((np.sum(mask) > 0).astype(np.int32), dtype=torch.int32)
+        label = torch.unsqueeze(_label, -1).to(torch.float32)
 
         # Apply augmentation
         if self.augmentation_params:
@@ -65,7 +68,7 @@ class SegmentationDataset(Dataset):
             # transformed_mask = transforms.ToPILImage()(mask)
             # transformed_image.show()
             # transformed_mask.show()
-        return image, mask
+        return image, mask, label
 
 
 class LungsCropper(Dataset):
@@ -187,6 +190,23 @@ class LungsCropper(Dataset):
         return image, mask
 
 
+class InferenceDataset(Dataset):
+    def __init__(self,
+                 img_paths: List[str],
+                 input_size: Union[int, List[int]] = (512, 512)):
+        self.img_paths = img_paths
+        self.input_size = (input_size, input_size) if isinstance(input_size, int) else input_size
+
+    def __len__(self):
+        return len(self.img_paths)
+
+    def __getitem__(self, idx):
+        img_path = self.img_paths[idx]
+        img = cv2.imread(img_path)
+        img = cv2.resize(img, self.input_size)
+        return img, img_path
+
+
 if __name__ == '__main__':
 
     # Example of usage of SegmentationDataset
@@ -204,10 +224,10 @@ if __name__ == '__main__':
                                   augmentation_params=None,
                                   transform_params=None)
 
-    for idx in range(10):
-        img, mask = dataset[idx]
+    for idx in range(30):
+        img, mask, label = dataset[idx]
 
-    # Example of usage of LungsCropper
+      # Example of usage of LungsCropper
     try:
         from . import segmentation_models_pytorch as smp    # (change to single import later)
     except:

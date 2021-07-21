@@ -21,7 +21,8 @@ def split_data(img_paths: List[str],
                dataset_names: List[str],
                class_name: str,
                seed: int = 11,
-               ratio: List[float] = (0.8, 0.1, 0.1)) -> Dict:
+               ratio: List[float] = (0.8, 0.1, 0.1),
+               normal_datasets: List[str] = ('rsna_normal', 'chest_xray_normal')) -> Dict:
 
     assert sum(ratio) <= 1, 'The sum of ratio values should not be greater than 1'
     output = {'train': Tuple[List[str], List[str]],
@@ -39,8 +40,7 @@ def split_data(img_paths: List[str],
         img_paths_ds = list(filter(lambda path: dataset_name in path, img_paths))
         ann_paths_ds = list(filter(lambda path: dataset_name in path, ann_paths))
 
-        # TODO: Fix masks when normal dataset is available
-        if dataset_name not in ['rsna_normal', 'chest_xray_normal']:
+        if dataset_name not in normal_datasets:
             img_paths_ds, ann_paths_ds = drop_empty_annotations(img_paths=img_paths_ds,
                                                                 ann_paths=ann_paths_ds,
                                                                 class_name=class_name)
@@ -98,7 +98,7 @@ def drop_empty_annotations(img_paths: List[str],
     return img_paths_cleaned, ann_paths_cleaned
 
 
-def covid_segmentation_labels(class_names: List[str]) -> Dict[int, str]:
+def get_logging_labels(class_names: List[str]) -> Dict[int, str]:
     l = {0: 'Background'}
     if 'Background' in class_names:
         class_names.remove('Background')
@@ -107,7 +107,7 @@ def covid_segmentation_labels(class_names: List[str]) -> Dict[int, str]:
     return l
 
 
-def log_datasets_files(run, datasets_list, artefact_name):
+def log_dataset(run, datasets_list, artefact_name):
     artifact = wandb.Artifact(artefact_name, type='dataset')
     for dataloader in datasets_list:
         img_paths, ann_paths = dataloader.dataset.img_paths, dataloader.dataset.ann_paths
@@ -130,3 +130,10 @@ def convert_seconds_to_hms(sec: Union[float, int]) -> str:
     s = sec % 3600 % 60
     output = '{:02d}h:{:02d}m:{:02d}s'.format(h, m, s)
     return output
+
+
+if __name__ == '__main__':
+
+    # The code snippet below is used only for debugging
+    labels = get_logging_labels(['COVID-19'])
+    print(labels)

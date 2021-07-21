@@ -5,12 +5,14 @@ from typing import List, Dict, Tuple, Any, Union
 import cv2
 import wandb
 import torch
+import torchvision.transforms as transforms
+
 import numpy as np
-import albumentations as A
+from PIL import Image
 import segmentation_models_pytorch as smp
 
-from tools.data_processing import log_datasets_files
-from tools.utils import EarlyStopping, divide_lung, separate_lungs
+from tools.data_processing import log_dataset
+from tools.utils import EarlyStopping, divide_lung, find_obj_bbox, separate_lungs, LossBalancedTaskWeighting
 
 
 class SegmentationModel:
@@ -18,6 +20,7 @@ class SegmentationModel:
                  model_name: str = 'Unet',
                  encoder_name: str = 'resnet18',
                  encoder_weights: str = 'imagenet',
+                 aux_params: Dict = None,
                  batch_size: int = 4,
                  epochs: int = 30,
                  input_size: Union[int, List[int]] = (512, 512),
@@ -25,20 +28,20 @@ class SegmentationModel:
                  num_classes: int = 1,
                  class_name: str = 'COVID-19',
                  activation: str = 'sigmoid',
-                 loss: str = 'Dice',
+                 loss_seg: str = 'Dice',
+                 loss_cls: str = None,
+                 weights_strategy=None,
                  optimizer: str = 'AdamW',
                  lr: float = 0.0001,
                  es_patience: int = None,
                  es_min_delta: float = 0,
                  monitor_metric: str = 'fscore',
                  logging_labels: Dict[int, str] = None,
-                 augmentation_params: A.Compose = None,
                  save_dir: str = 'models',
                  wandb_api_key: str = 'b45cbe889f5dc79d1e9a0c54013e6ab8e8afb871',
                  wandb_project_name: str = 'covid_segmentation') -> None:
 
         # Dataset settings
-        self.augmentation_params = augmentation_params
         self.input_size = (input_size, input_size) if isinstance(input_size, int) else input_size
 
         # Device settings
@@ -48,13 +51,16 @@ class SegmentationModel:
         self.model_name = model_name
         self.encoder_name = encoder_name
         self.encoder_weights = encoder_weights
+        self.aux_params = aux_params
         self.batch_size = batch_size
         self.epochs = epochs
         self.in_channels = in_channels
         self.num_classes = num_classes
         self.class_name = class_name
         self.activation = activation
-        self.loss = loss
+        self.loss_seg = loss_seg
+        self.loss_cls = loss_cls
+        self.weights_strategy = weights_strategy
         self.optimizer = optimizer
         self.lr = lr
         self.es_patience = es_patience
@@ -82,7 +88,8 @@ class SegmentationModel:
             'classes': self.num_classes,
             'class_name': self.class_name,
             'activation': self.activation,
-            'loss': self.loss,
+            'loss_seg': self.loss_seg,
+            'loss_cls': self.loss_cls,
             'optimizer': self.optimizer,
             'lr': self.lr,
             'es_patience': self.es_patience,
@@ -91,6 +98,14 @@ class SegmentationModel:
             'device': self.device
         }
         return hyperparameters
+
+    @staticmethod
+    def set_names(metrics: List, attributes: List):
+        assert len(metrics) == len(attributes), 'shapes of metrics and attributes aren\'t equal'
+        for idx, metric in enumerate(metrics):
+            metric._name = attributes[idx]
+
+        return metrics
 
     @staticmethod
     def _change_loss_name(metrics: Dict[str, float],
@@ -108,7 +123,7 @@ class SegmentationModel:
         _macs, _params = get_model_complexity_info(model, (img_channels, img_height, img_width),
                                                    as_strings=False, print_per_layer_stat=False, verbose=False)
         macs = round(_macs / 10. ** 9, 1)
-        params = round(_params / 10.**6, 1)
+        params = round(_params / 10. ** 6, 1)
         params = {'params': params, 'macs': macs}
         return params
 
@@ -128,18 +143,24 @@ class SegmentationModel:
     def _get_log_images(self,
                         model: Any,
                         log_image_size: Tuple[int, int],
-                        logging_loader: torch.utils.data.dataloader.DataLoader) -> Tuple[List[wandb.Image], List[wandb.Image]]:
+                        logging_loader: torch.utils.data.dataloader.DataLoader) -> Tuple[
+        List[wandb.Image], List[wandb.Image]]:
 
+        model.eval()
         mean = torch.tensor(logging_loader.dataset.transform_params['mean'])
         std = torch.tensor(logging_loader.dataset.transform_params['std'])
 
         with torch.no_grad():
             segmentation_masks = []
             probability_maps = []
-            for idx, (image, mask) in enumerate(logging_loader):
+            for idx, (image, mask, label) in enumerate(logging_loader):
                 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-                image, mask = image.to(device), mask.to(device)
-                prediction = model(image)
+                image, mask, label = image.to(device), mask.to(device), label.to(device)
+                pred_seg = model(image)
+                if isinstance(pred_seg, tuple):
+                    pred_seg, pred_cls = pred_seg
+                    pred_cls = torch.round(pred_cls.view(-1))
+                    pred_seg = pred_seg * pred_cls.view(-1, 1, 1, 1)
 
                 image_bg = torch.clone(image).squeeze(dim=0)
                 image_bg = image_bg.permute(1, 2, 0)
@@ -150,11 +171,11 @@ class SegmentationModel:
                 mask_gt = mask_gt.detach().cpu().numpy().astype(np.uint8)
                 mask_gt = cv2.resize(mask_gt, log_image_size, interpolation=cv2.INTER_NEAREST)
 
-                mask_pred = torch.clone(prediction).squeeze()
+                mask_pred = torch.clone(pred_seg).squeeze()
                 mask_pred = (mask_pred > 0.5).detach().cpu().numpy().astype(np.uint8)
                 mask_pred = cv2.resize(mask_pred, log_image_size, interpolation=cv2.INTER_NEAREST)
 
-                prob_map = torch.clone(prediction).squeeze()
+                prob_map = torch.clone(pred_seg).squeeze()
                 prob_map = (prob_map * 255).detach().cpu().numpy().astype(np.uint8)
                 prob_map = cv2.resize(prob_map, log_image_size, interpolation=cv2.INTER_CUBIC)
 
@@ -169,6 +190,8 @@ class SegmentationModel:
                                                     masks={'Ground truth': {'mask_data': mask_gt,
                                                                             'class_labels': self.logging_labels}},
                                                     caption='Map {:d}'.format(idx + 1)))
+
+        model.train()
         return segmentation_masks, probability_maps
 
     def print_model_settings(self) -> None:
@@ -181,7 +204,11 @@ class SegmentationModel:
                                                                      self.input_size[1],
                                                                      self.in_channels) + '\033[0m')
         print('\033[92m' + 'Batch size:       {:d}'.format(self.batch_size) + '\033[0m')
-        print('\033[92m' + 'Loss:             {:s}'.format(self.loss) + '\033[0m')
+        print('\033[92m' + 'Seg. loss:        {:s}'.format(self.loss_seg) + '\033[0m')
+        if self.loss_cls is None:
+            print('\033[92m' + 'Cls. loss:        {:s}'.format('None') + '\033[0m')
+        else:
+            print('\033[92m' + 'Cls. loss:        {:s}'.format(self.loss_cls) + '\033[0m')
         print('\033[92m' + 'Optimizer:        {:s}'.format(self.optimizer) + '\033[0m')
         print('\033[92m' + 'Learning rate:    {:.4f}'.format(self.lr) + '\033[0m')
         print('\033[92m' + 'Class count:      {:d}'.format(self.num_classes) + '\033[0m')
@@ -221,49 +248,64 @@ class SegmentationModel:
                              encoder_weights=self.encoder_weights,
                              in_channels=self.in_channels,
                              classes=self.num_classes,
-                             activation=self.activation)
+                             activation=self.activation,
+                             aux_params=self.aux_params)
         elif self.model_name == 'Unet++':
             model = smp.UnetPlusPlus(encoder_name=self.encoder_name,
                                      encoder_weights=self.encoder_weights,
                                      in_channels=self.in_channels,
                                      classes=self.num_classes,
-                                     activation=self.activation)
+                                     activation=self.activation,
+                                     aux_params=self.aux_params)
         elif self.model_name == 'DeepLabV3':
             model = smp.DeepLabV3(encoder_name=self.encoder_name,
                                   encoder_weights=self.encoder_weights,
                                   in_channels=self.in_channels,
                                   classes=self.num_classes,
-                                  activation=self.activation)
+                                  activation=self.activation,
+                                  aux_params=self.aux_params)
         elif self.model_name == 'DeepLabV3+':
             model = smp.DeepLabV3Plus(encoder_name=self.encoder_name,
                                       encoder_weights=self.encoder_weights,
                                       in_channels=self.in_channels,
                                       classes=self.num_classes,
-                                      activation=self.activation)
+                                      activation=self.activation,
+                                      aux_params=self.aux_params)
         elif self.model_name == 'FPN':
             model = smp.FPN(encoder_name=self.encoder_name,
                             encoder_weights=self.encoder_weights,
                             in_channels=self.in_channels,
                             classes=self.num_classes,
-                            activation=self.activation)
+                            activation=self.activation,
+                            aux_params=self.aux_params)
         elif self.model_name == 'Linknet':
             model = smp.Linknet(encoder_name=self.encoder_name,
                                 encoder_weights=self.encoder_weights,
                                 in_channels=self.in_channels,
                                 classes=self.num_classes,
-                                activation=self.activation)
+                                activation=self.activation,
+                                aux_params=self.aux_params)
         elif self.model_name == 'PSPNet':
             model = smp.PSPNet(encoder_name=self.encoder_name,
                                encoder_weights=self.encoder_weights,
                                in_channels=self.in_channels,
                                classes=self.num_classes,
-                               activation=self.activation)
+                               activation=self.activation,
+                               aux_params=self.aux_params)
         elif self.model_name == 'PAN':
             model = smp.PAN(encoder_name=self.encoder_name,
                             encoder_weights=self.encoder_weights,
                             in_channels=self.in_channels,
                             classes=self.num_classes,
-                            activation=self.activation)
+                            activation=self.activation,
+                            aux_params=self.aux_params)
+        elif self.model_name == 'MAnet':
+            model = smp.MAnet(encoder_name=self.encoder_name,
+                              encoder_weights=self.encoder_weights,
+                              in_channels=self.in_channels,
+                              classes=self.num_classes,
+                              activation=self.activation,
+                              aux_params=self.aux_params)
         else:
             raise ValueError('Unknown model name:'.format(self.model_name))
 
@@ -306,18 +348,37 @@ class SegmentationModel:
         return optimizer
 
     @staticmethod
-    def build_loss(loss: str) -> Any:
-        if loss == 'Dice':
-            loss = smp.utils.losses.DiceLoss()
-        elif loss == 'Jaccard':
-            loss = smp.utils.losses.JaccardLoss()
-        elif loss == 'BCE':
-            loss = smp.utils.losses.BCELoss()
-        elif loss == 'BCEL':
-            loss = smp.utils.losses.BCEWithLogitsLoss()
+    def build_loss(loss_seg: str, loss_cls: str = None) -> (Any, Any):
+        if loss_seg == 'Dice':
+            loss_seg = smp.utils.losses.DiceLoss()
+        elif loss_seg == 'Jaccard':
+            loss_seg = smp.utils.losses.JaccardLoss()
+        elif loss_seg == 'BCE':
+            loss_seg = smp.utils.losses.BCELoss()
+        elif loss_seg == 'BCEL':
+            loss_seg = smp.utils.losses.BCEWithLogitsLoss()
+        elif loss_seg == 'LovaszLoss':
+            loss_seg = smp.losses.LovaszLoss(mode='binary')
+        elif loss_seg == 'FocalLoss':
+            loss_seg = smp.losses.FocalLoss(mode='binary')
         else:
-            raise ValueError('Unknown loss: {}'.format(loss))
-        return loss
+            raise ValueError('Unknown loss: {}'.format(loss_seg))
+
+        if loss_cls is None:
+            pass
+        elif loss_cls == 'BCE':
+            loss_cls = torch.nn.BCELoss()
+            loss_cls.__name__ = 'bce_cls_loss'
+        elif loss_cls == 'SmoothL1Loss':
+            loss_cls = torch.nn.SmoothL1Loss()
+            loss_cls.__name__ = 'smooth_l1_loss'
+        elif loss_cls == 'L1Loss':
+            loss_cls = torch.nn.L1Loss()
+            loss_cls.__name__ = 'l1_loss'
+        else:
+            raise ValueError('Unknown loss: {}'.format(loss_cls))
+
+        return loss_seg, loss_cls
 
     def train(self,
               train_loader: torch.utils.data.dataloader.DataLoader,
@@ -335,7 +396,7 @@ class SegmentationModel:
         #                   os.path.join(self.model_dir, 'model.onnx'),
         #                   verbose=True)
         optimizer = self.build_optimizer(model=model, optimizer=self.optimizer, lr=self.lr)
-        loss = self.build_loss(loss=self.loss)
+        loss_seg, loss_cls = self.build_loss(loss_seg=self.loss_seg, loss_cls=self.loss_cls)
 
         # Use self.find_lr once in order to find LR boundaries
         # self.find_lr(model=model, optimizer=optimizer, criterion=loss, train_loader=train_loader, val_loader=val_loader)
@@ -343,14 +404,38 @@ class SegmentationModel:
         es_callback = EarlyStopping(monitor_metric=self.monitor_metric,
                                     patience=self.es_patience,
                                     min_delta=self.es_min_delta)
-        metrics = [smp.utils.metrics.Fscore(threshold=0.5),
-                   smp.utils.metrics.IoU(threshold=0.5),
-                   smp.utils.metrics.Accuracy(threshold=0.5),
-                   smp.utils.metrics.Precision(threshold=0.5),
-                   smp.utils.metrics.Recall(threshold=0.5)]
-        train_epoch = smp.utils.train.TrainEpoch(model, loss=loss, metrics=metrics, optimizer=optimizer, device=self.device)
-        valid_epoch = smp.utils.train.ValidEpoch(model, loss=loss, metrics=metrics, stage_name='valid', device=self.device)
-        test_epoch = smp.utils.train.ValidEpoch(model, loss=loss, metrics=metrics, stage_name='test', device=self.device)
+
+        metrics_seg = [smp.utils.metrics.Fscore(threshold=0.5),
+                       smp.utils.metrics.IoU(threshold=0.5),
+                       smp.utils.metrics.Accuracy(threshold=0.5),
+                       smp.utils.metrics.Precision(threshold=0.5),
+                       smp.utils.metrics.Recall(threshold=0.5)]
+        metrics_seg = SegmentationModel.set_names(metrics_seg,
+                                                  ['fscore_seg', 'iou_seg', 'accuracy_seg', 'precision_seg',
+                                                   'recall_seg'])
+
+        metrics_cls = [smp.utils.metrics.Accuracy(threshold=0.5),
+                       smp.utils.metrics.Precision(threshold=0.5),
+                       smp.utils.metrics.Recall(threshold=0.5),
+                       smp.utils.metrics.Fscore(threshold=0.5)]
+
+        metrics_cls = SegmentationModel.set_names(metrics_cls,
+                                                  ['accuracy_cls', 'precision_cls', 'recall_cls', 'f1_cls'])
+
+        train_epoch = smp.utils.train.TrainEpoch(model, loss_seg=loss_seg, loss_cls=loss_cls,
+                                                 weights_strategy=self.weights_strategy,
+                                                 metrics_seg=metrics_seg, metrics_cls=metrics_cls, optimizer=optimizer,
+                                                 device=self.device)
+
+        valid_epoch = smp.utils.train.ValidEpoch(model, loss_seg=loss_seg, loss_cls=loss_cls,
+                                                 weights_strategy=self.weights_strategy,
+                                                 metrics_seg=metrics_seg, metrics_cls=metrics_cls, stage_name='valid',
+                                                 device=self.device)
+
+        test_epoch = smp.utils.train.ValidEpoch(model, loss_seg=loss_seg, loss_cls=loss_cls,
+                                                weights_strategy=self.weights_strategy,
+                                                metrics_seg=metrics_seg, metrics_cls=metrics_cls, stage_name='test',
+                                                device=self.device)
 
         # Initialize W&B
         if not self.wandb_api_key is None:
@@ -363,9 +448,10 @@ class SegmentationModel:
             os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
             run = wandb.init(project=self.wandb_project_name, entity='viacheslav_danilov', name=self.run_name,
                              config=hyperparameters, tags=[self.model_name, self.encoder_name, self.encoder_weights])
-            log_datasets_files(run, [train_loader, val_loader, test_loader], artefact_name=self.class_name)
+            log_dataset(run, [train_loader, val_loader, test_loader], artefact_name=self.class_name)
 
-        params = self._get_log_params(model, img_height=self.input_size[0], img_width=self.input_size[1], img_channels=self.in_channels)
+        params = self._get_log_params(model, img_height=self.input_size[0], img_width=self.input_size[1],
+                                      img_channels=self.in_channels)
         wandb.log(data=params, commit=False)
 
         best_train_score, mode = (np.inf, 'min') if 'loss' in self.monitor_metric else (-np.inf, 'max')
@@ -402,9 +488,9 @@ class SegmentationModel:
                     best_test_score = test_logs[self.monitor_metric]
                     wandb.log(data={'best/test_score': best_test_score, 'best/test_epoch': epoch}, commit=False)
 
-            metrics = self._get_log_metrics(train_logs, val_logs, test_logs)
+            metrics_seg = self._get_log_metrics(train_logs, val_logs, test_logs)
             masks, maps = self._get_log_images(model=model, log_image_size=(1000, 1000), logging_loader=logging_loader)
-            wandb.log(data=metrics, commit=False)
+            wandb.log(data=metrics_seg, commit=False)
             wandb.log(data={'Segmentation masks': masks, 'Probability maps': maps})
 
             es_callback(val_logs)
@@ -427,11 +513,14 @@ class TuningModel(SegmentationModel):
                  model_name: str = 'Unet',
                  encoder_name: str = 'resnet18',
                  encoder_weights: str = 'imagenet',
+                 aux_params: Dict = None,
                  batch_size: int = 4,
                  epochs: int = 30,
                  input_size: Union[int, List[int]] = (512, 512),
                  class_name: str = 'COVID-19',
-                 loss: str = 'Dice',
+                 loss_seg: str = 'Dice',
+                 loss_cls: str = None,
+                 weights_strategy=None,
                  optimizer: str = 'AdamW',
                  es_patience: int = None,
                  es_min_delta: float = 0,
@@ -441,11 +530,14 @@ class TuningModel(SegmentationModel):
         self.model_name = model_name
         self.encoder_name = encoder_name
         self.encoder_weights = encoder_weights
+        self.aux_params = aux_params
         self.batch_size = batch_size
         self.epochs = epochs
         self.input_size = (input_size, input_size) if isinstance(input_size, int) else input_size
         self.class_name = class_name
-        self.loss = loss
+        self.loss_seg = loss_seg
+        self.loss_cls = loss_cls
+        self.weights_strategy = weights_strategy
         self.optimizer = optimizer
         self.lr = lr
         self.es_patience = es_patience
@@ -461,20 +553,45 @@ class TuningModel(SegmentationModel):
 
         model = self.get_model()
         optimizer = self.build_optimizer(model=model, optimizer=self.optimizer, lr=self.lr)
-        loss = self.build_loss(loss=self.loss)
+        loss_seg, loss_cls = self.build_loss(loss_seg=self.loss_seg, loss_cls=self.loss_cls)
         es_callback = EarlyStopping(monitor_metric=self.monitor_metric,
                                     patience=self.es_patience,
                                     min_delta=self.es_min_delta)
-        metrics = [smp.utils.metrics.Fscore(threshold=0.5),
-                   smp.utils.metrics.IoU(threshold=0.5),
-                   smp.utils.metrics.Accuracy(threshold=0.5),
-                   smp.utils.metrics.Precision(threshold=0.5),
-                   smp.utils.metrics.Recall(threshold=0.5)]
-        train_epoch = smp.utils.train.TrainEpoch(model, loss=loss, metrics=metrics, optimizer=optimizer, device=self.device)
-        valid_epoch = smp.utils.train.ValidEpoch(model, loss=loss, metrics=metrics, stage_name='valid', device=self.device)
-        test_epoch = smp.utils.train.ValidEpoch(model, loss=loss, metrics=metrics, stage_name='test', device=self.device)
 
-        params = self._get_log_params(model, img_height=self.input_size[0], img_width=self.input_size[1], img_channels=self.in_channels)
+        metrics_seg = [smp.utils.metrics.Fscore(threshold=0.5),
+                       smp.utils.metrics.IoU(threshold=0.5),
+                       smp.utils.metrics.Accuracy(threshold=0.5),
+                       smp.utils.metrics.Precision(threshold=0.5),
+                       smp.utils.metrics.Recall(threshold=0.5)]
+        metrics_seg = SegmentationModel.set_names(metrics_seg,
+                                                  ['fscore_seg', 'iou_seg', 'accuracy_seg', 'precision_seg',
+                                                   'recall_seg'])
+
+        metrics_cls = [smp.utils.metrics.Accuracy(threshold=0.5),
+                       smp.utils.metrics.Precision(threshold=0.5),
+                       smp.utils.metrics.Recall(threshold=0.5),
+                       smp.utils.metrics.Fscore(threshold=0.5)]
+
+        metrics_cls = SegmentationModel.set_names(metrics_cls,
+                                                  ['accuracy_cls', 'precision_cls', 'recall_cls', 'f1_cls'])
+
+        train_epoch = smp.utils.train.TrainEpoch(model, loss_seg=loss_seg, loss_cls=loss_cls,
+                                                 weights_strategy=self.weights_strategy,
+                                                 metrics_seg=metrics_seg, metrics_cls=metrics_cls, optimizer=optimizer,
+                                                 device=self.device)
+
+        valid_epoch = smp.utils.train.ValidEpoch(model, loss_seg=loss_seg, loss_cls=loss_cls,
+                                                 weights_strategy=self.weights_strategy,
+                                                 metrics_seg=metrics_seg, metrics_cls=metrics_cls, stage_name='valid',
+                                                 device=self.device)
+
+        test_epoch = smp.utils.train.ValidEpoch(model, loss_seg=loss_seg, loss_cls=loss_cls,
+                                                weights_strategy=self.weights_strategy,
+                                                metrics_seg=metrics_seg, metrics_cls=metrics_cls, stage_name='test',
+                                                device=self.device)
+
+        params = self._get_log_params(model, img_height=self.input_size[0], img_width=self.input_size[1],
+                                      img_channels=self.in_channels)
         wandb.log(data=params, commit=False)
 
         best_train_score, mode = (np.inf, 'min') if 'loss' in self.monitor_metric else (-np.inf, 'max')
@@ -523,20 +640,102 @@ class CovidScoringNet:
     def __init__(self,
                  lungs_segmentation_model,
                  covid_segmentation_model,
-                 threshold: float):
+                 device,
+                 threshold: float,
+                 input_size: Union[int, List[int]] = (512, 512),
+                 covid_preprocessing=None,
+                 lung_preprocessing=None,
+                 flag_type: str = None):
         assert 0 <= threshold <= 1, 'Threshold value is in an incorrect scale. It should be in the range [0,1].'
-        self.lungs_segmentation = lungs_segmentation_model
-        self.covid_segmentation = covid_segmentation_model
+        assert flag_type in ['no_crop', 'crop', 'single_crop'], 'invalid flag type'
+
+        self.lungs_segmentation = lungs_segmentation_model.to(device).eval()
+        self.covid_segmentation = covid_segmentation_model.to(device).eval()
+        self.device = device
         self.threshold = threshold
+        self.input_size = (input_size, input_size) if isinstance(input_size, int) else input_size
+        self.covid_preprocessing = covid_preprocessing
+        self.lung_preprocessing = lung_preprocessing
+        self.flag_type = flag_type
+
+        self.preprocess_image_covid = transforms.Compose([transforms.ToTensor(),
+                                                          transforms.Resize(size=self.input_size,
+                                                                            interpolation=Image.BICUBIC),
+                                                          transforms.Normalize(mean=self.covid_preprocessing['mean'],
+                                                                               std=self.covid_preprocessing['std'])])
+        self.preprocess_image_lung = transforms.Compose([transforms.ToTensor(),
+                                                         transforms.Resize(size=self.input_size,
+                                                                           interpolation=Image.BICUBIC),
+                                                         transforms.Normalize(mean=self.lung_preprocessing['mean'],
+                                                                              std=self.lung_preprocessing['std'])])
 
     def __call__(self, img):
         return self.predict(img)
 
-    def predict(self, img):
-        assert img.shape[0:2] == (1, 3), 'Incorrect image dimensions'
-        lungs_predicted = self.lungs_segmentation(img)[0, 0, :, :].cpu().detach().numpy()
-        covid_predicted = self.covid_segmentation(img)[0, 0, :, :].cpu().detach().numpy()
+    def eval(self):
+        self.lungs_segmentation.eval()
+        self.covid_segmentation.eval()
 
+    def predict_masks(self, source_img):
+        img = torch.unsqueeze(self.preprocess_image_lung(source_img), dim=0).to(self.device)
+
+        if self.flag_type == 'no_crop':
+            lungs_predicted = self.lungs_segmentation(img)[0, 0, :, :].cpu().detach().numpy()
+            covid_predicted = self.covid_segmentation(img)
+            if isinstance(covid_predicted, tuple):
+                covid_predicted, pred_cls = covid_predicted
+                pred_cls = torch.round(pred_cls.view(-1))
+                covid_predicted = covid_predicted * pred_cls.view(-1, 1, 1, 1)
+
+            covid_predicted = covid_predicted[0, 0, :, :].cpu().detach().numpy()
+            return lungs_predicted, covid_predicted
+
+        if self.flag_type == 'crop':
+            lungs_predicted = self.lungs_segmentation(img).permute(0, 2, 3, 1).cpu().detach().numpy()[0, :, :, :] > 0.5
+            crop_lungs = source_img * lungs_predicted
+
+            processed_cropped_lung_mask = torch.unsqueeze(self.preprocess_image_covid(crop_lungs), dim=0)
+            processed_cropped_lung_mask = processed_cropped_lung_mask.to(self.device)
+
+            covid_predicted = self.covid_segmentation(processed_cropped_lung_mask)
+            if isinstance(covid_predicted, tuple):
+                covid_predicted, pred_cls = covid_predicted
+                pred_cls = torch.round(pred_cls.view(-1))
+                covid_predicted = covid_predicted * pred_cls.view(-1, 1, 1, 1)
+
+            covid_predicted = covid_predicted.cpu().detach().numpy()[0, 0, :, :]
+            lungs_predicted = lungs_predicted[:, :, 0]
+            return lungs_predicted, covid_predicted
+
+        if self.flag_type == 'single_crop':
+            lungs_predicted = self.lungs_segmentation(img).permute(0, 2, 3, 1).cpu().detach().numpy()[0, :, :, :] > 0.5
+            crop_lungs = source_img * lungs_predicted
+
+            bbox_coordinates = find_obj_bbox(lungs_predicted)
+            bbox_min_x = np.min([x[0] for x in bbox_coordinates])
+            bbox_min_y = np.min([x[1] for x in bbox_coordinates])
+            bbox_max_x = np.max([x[2] for x in bbox_coordinates])
+            bbox_max_y = np.max([x[3] for x in bbox_coordinates])
+
+            single_cropped_lung_mask = crop_lungs[bbox_min_y:bbox_max_y, bbox_min_x:bbox_max_x]
+            single_cropped_lung_mask = cv2.resize(single_cropped_lung_mask, (512, 512))
+            processed_single_cropped_lung_mask = torch.unsqueeze(self.preprocess_image_covid(single_cropped_lung_mask), dim=0)
+            processed_single_cropped_lung_mask = processed_single_cropped_lung_mask.to(self.device)
+
+            single_cropped_covid_mask = self.covid_segmentation(processed_single_cropped_lung_mask)
+            if isinstance(single_cropped_covid_mask, tuple):
+                single_cropped_covid_mask, pred_cls = single_cropped_covid_mask
+                pred_cls = torch.round(pred_cls.view(-1))
+                single_cropped_covid_mask = single_cropped_covid_mask * pred_cls.view(-1, 1, 1, 1)
+
+            single_cropped_covid_mask = single_cropped_covid_mask.permute(0, 2, 3, 1).cpu().detach().numpy()[0, :, :, 0]
+            single_cropped_lung_mask = single_cropped_lung_mask[:, :, 0]
+            return single_cropped_lung_mask, single_cropped_covid_mask
+
+    def predict(self, source_img):
+        assert source_img.shape[2] == 3, 'Incorrect image dimensions'
+
+        lungs_predicted, covid_predicted = self.predict_masks(source_img)
         # TODO (David): Estimate optimal thresholds for lungs and covid predictions
         # TODO (David): https://quantori.atlassian.net/wiki/spaces/PRJVOL/pages/2253324439/May+7+2021#3.-Results
         # TODO (David): https://towardsdatascience.com/fine-tuning-a-classifier-in-scikit-learn-66e048c21e65
