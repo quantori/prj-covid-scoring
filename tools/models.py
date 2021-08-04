@@ -66,7 +66,7 @@ class SegmentationModel:
         self.es_min_delta = es_min_delta
         self.monitor_metric = monitor_metric
         run_time = datetime.now().strftime("%d%m%y_%H%M")
-        self.run_name = '{:s}_{:s}_{:s}_{:s}'.format(self.model_name, self.encoder_name, self.encoder_weights, run_time)
+        self.run_name = '{:s}_{:s}_{:s}'.format(self.model_name, self.encoder_name, run_time)
         self.model_dir = os.path.join(save_dir, self.run_name)
 
         # Logging settings
@@ -159,7 +159,6 @@ class SegmentationModel:
                 mask_pred = (mask_pred > 0.5).detach().cpu().numpy().astype(np.uint8)
                 mask_pred = cv2.resize(mask_pred, log_image_size, interpolation=cv2.INTER_NEAREST)
 
-                # TODO: Log source probability map without nullifying
                 prob_map = torch.clone(pred_seg).squeeze()
                 prob_map = (prob_map * 255).detach().cpu().numpy().astype(np.uint8)
                 prob_map = cv2.resize(prob_map, log_image_size, interpolation=cv2.INTER_CUBIC)
@@ -467,7 +466,7 @@ class SegmentationModel:
                     wandb.log(data={'best/test_score': best_test_score, 'best/test_epoch': epoch}, commit=False)
 
             metrics_log = self._get_log_metrics(train_logs, val_logs, test_logs)
-            masks, maps = self._get_log_images(model=model, log_image_size=(1000, 1000), logging_loader=logging_loader)
+            masks, maps = self._get_log_images(model=model, log_image_size=(512, 512), logging_loader=logging_loader)
             wandb.log(data=metrics_log, commit=False)
             wandb.log(data={'Segmentation masks': masks, 'Probability maps': maps})
 
