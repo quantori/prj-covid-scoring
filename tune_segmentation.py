@@ -94,7 +94,7 @@ def main(config=None):
         if not args.use_cls_head:
             args.loss_cls = None
 
-        weights_strategy = StaticWeighting(w1=0.55, w2=0.45)
+        weights_strategy = StaticWeighting(w1=1.0, w2=1.0)
         # weights_strategy = BalancedWeighting(alpha=0.05)
 
         # Build model
@@ -146,7 +146,7 @@ def get_values(min: int, max: int, step: int, dtype) -> Union[List[int], List[fl
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='Tuning pipeline')
-    parser.add_argument('--dataset_dir', default='dataset/covid_segmentation', type=str,
+    parser.add_argument('--dataset_dir', default='dataset/lungs_segmentation', type=str,
                         help='dataset/covid_segmentation, '
                              'dataset/covid_segmentation_single_crop, '
                              'dataset/covid_segmentation_double_crop,'
@@ -156,13 +156,13 @@ if __name__ == '__main__':
     parser.add_argument('--data_fraction_used', default=0.1, type=float)
     parser.add_argument('--ratio', nargs='+', default=(0.8, 0.2, 0.0), type=float, help='(train_size, val_size, test_size)')
     parser.add_argument('--tuning_method', default='random', type=str, help='grid, random, bayes')
-    parser.add_argument('--max_runs', default=2, type=int, help='number of trials to run')
+    parser.add_argument('--max_runs', default=300, type=int, help='number of trials to run')
     parser.add_argument('--batch_size', default=4, type=int)
     parser.add_argument('--es_patience', default=6, type=int)
     parser.add_argument('--es_min_delta', default=0.01, type=float)
     parser.add_argument('--monitor_metric', default='f1_seg', type=str)
     parser.add_argument('--epochs', default=16, type=int)
-    parser.add_argument('--use_cls_head', default=True, type=bool)
+    parser.add_argument('--use_cls_head', default=False, type=bool)
     parser.add_argument('--wandb_project_name', default=None, type=str)
     parser.add_argument('--wandb_api_key', default='b45cbe889f5dc79d1e9a0c54013e6ab8e8afb871', type=str)
     args = parser.parse_args()
@@ -181,7 +181,7 @@ if __name__ == '__main__':
         args.wandb_project_name = 'covid_segmentation_tuning' if not isinstance(args.wandb_project_name, str) else args.wandb_project_name
     elif 'lungs' in args.dataset_dir:
         args.class_name = 'Lungs'
-        args.wandb_project_name = 'lungs_segmentation' if not isinstance(args.wandb_project_name, str) else args.wandb_project_name
+        args.wandb_project_name = 'lungs_segmentation_tuning' if not isinstance(args.wandb_project_name, str) else args.wandb_project_name
     else:
         raise ValueError('There is no class name for dataset {:s}'.format(args.dataset_dir))
 
@@ -216,8 +216,9 @@ if __name__ == '__main__':
             'input_size': {'values': get_values(min=384, max=640, step=32, dtype=int)},
             # 'input_size': {'values': [512]},
             'loss_seg': {'values': ['Dice', 'Jaccard', 'BCE', 'BCEL', 'Lovasz', 'Focal']},
+            # 'loss_seg': {'values': ['Dice']},
             'loss_cls': {'values': ['BCE', 'SL1', 'L1']},
-            # 'loss': {'values': ['Dice']},
+            # 'loss_cls': {'values': ['BCE']},
             'optimizer': {'values': ['SGD', 'RMSprop', 'Adam', 'AdamW', 'Adam_amsgrad', 'AdamW_amsgrad']},
             # 'optimizer': {'values': ['Adam_amsgrad']},
             'lr': {'values': [0.01, 0.005, 0.001, 0.0005, 0.0001]},
