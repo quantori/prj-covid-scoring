@@ -9,7 +9,7 @@ from tools.models import SegmentationModel
 from tools.datasets import SegmentationDataset
 from tools.supervisely_tools import read_supervisely_project
 from tools.data_processing import split_data, get_logging_labels
-from tools.utils import LossBalancedTaskWeighting, StaticWeights
+from tools.utils import BalancedWeighting, StaticWeighting
 
 
 def main(args):
@@ -38,7 +38,7 @@ def main(args):
         albu.HorizontalFlip(p=0.5),
         albu.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2, p=0.2)
     ])
-    #augmentation_params = None
+    # augmentation_params = None     # TODO: remove after debugging
 
     datasets = {}
     for subset_name in subsets:
@@ -50,7 +50,6 @@ def main(args):
                                       augmentation_params=_augmentation_params,
                                       transform_params=preprocessing_params)
         datasets[subset_name] = dataset
-
 
     # Used only for augmentation debugging
     # import cv2
@@ -68,12 +67,12 @@ def main(args):
     # cv2.imwrite('mask.png', mask)
 
     # If debug is frozen, use num_workers = 0
-    num_workers = 8 * device_count()
+    num_workers = 0 * device_count()
     train_loader = DataLoader(datasets['train'], batch_size=args.batch_size, num_workers=num_workers, shuffle=True)
     val_loader = DataLoader(datasets['val'], batch_size=args.batch_size, num_workers=num_workers)
     test_loader = DataLoader(datasets['test'], batch_size=args.batch_size, num_workers=num_workers)
 
-    #Use all images from the logging folder without exclusion
+    # Use all images from the logging folder without exclusion
     img_paths_logging, ann_paths_logging, dataset_names_logging = read_supervisely_project(sly_project_dir=args.logging_dir,
                                                                                            included_datasets=None,
                                                                                            excluded_datasets=None)
@@ -86,16 +85,17 @@ def main(args):
     logging_loader = DataLoader(logging_dataset, batch_size=1, num_workers=num_workers)
 
     aux_params = None
-    if args.aux_params:
+    if args.use_cls_head:
         aux_params = dict(pooling='avg',
-                          dropout=0.5,
+                          dropout=0.25,
                           activation='sigmoid',
                           classes=1)
-    if not args.aux_params:
+
+    if not args.use_cls_head:
         args.loss_cls = None
 
-    weights_strategy = StaticWeights(0.55, 0.45)
-    #weights_strategy = LossBalancedTaskWeighting(0.05)
+    weights_strategy = StaticWeighting(w1=0.55, w2=0.45)
+    # weights_strategy = BalancedWeighting(alpha=0.05)
 
     model = SegmentationModel(model_name=args.model_name,
                               encoder_name=args.encoder_name,
@@ -124,35 +124,35 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Segmentation pipeline')
     parser.add_argument('--dataset_dir', default='dataset/covid_segmentation_single_crop', type=str, help='dataset/covid_segmentation or dataset/lungs_segmentation')
     parser.add_argument('--included_datasets', default=None, type=str)
-    parser.add_argument('--excluded_datasets', default=['chest_xray_normal', 'COVID-19-Radiography-Database', 'Figure1-COVID-chestxray-dataset', 'Actualmed-COVID-chestxray-dataset'], type=str)
+    parser.add_argument('--excluded_datasets', default=None, type=str)
     parser.add_argument('--ratio', nargs='+', default=(0.8, 0.1, 0.1), type=float, help='train, val, and test sizes')
-    parser.add_argument('--model_name', default='Unet', type=str, help='Unet, Unet++, DeepLabV3, DeepLabV3+, FPN, Linknet, PSPNet or PAN')
+    parser.add_argument('--model_name', default='Unet', type=str, help='Unet, Unet++, DeepLabV3, DeepLabV3+, FPN, Linknet, PSPNet, PAN and MAnet')
     parser.add_argument('--input_size', nargs='+', default=(512, 512), type=int)
     parser.add_argument('--encoder_name', default='resnet18', type=str)
     parser.add_argument('--encoder_weights', default='imagenet', type=str, help='imagenet, ssl or swsl')
     parser.add_argument('--batch_size', default=8, type=int)
-    parser.add_argument('--loss_seg', default='Dice', type=str, help='Dice, Jaccard, BCE or BCEL')
-    parser.add_argument('--loss_cls', default='BCE', type=str, help='BCE, L1Loss, SmoothL1Loss') #BCE, L1Loss, SmoothL1Loss
+    parser.add_argument('--loss_seg', default='Dice', type=str, help='Dice, Jaccard, BCE, BCEL, Lovasz or Focal')
+    parser.add_argument('--loss_cls', default='SL1', type=str, help='BCE, SL1 or L1')
     parser.add_argument('--optimizer', default='Adam', type=str, help='SGD, Adam, AdamW, RMSprop, Adam_amsgrad or AdamW_amsgrad')
     parser.add_argument('--lr', default=0.0001, type=float)
     parser.add_argument('--es_patience', default=10, type=int)
     parser.add_argument('--es_min_delta', default=0.01, type=float)
-    parser.add_argument('--monitor_metric', default='fscore_seg', type=str)
+    parser.add_argument('--monitor_metric', default='f1_seg', type=str)
     parser.add_argument('--epochs', default=30, type=int)
-    parser.add_argument('--aux_params', default=True, type=bool)
+    parser.add_argument('--use_cls_head', default=True, type=bool)
     parser.add_argument('--save_dir', default='models', type=str)
     parser.add_argument('--wandb_project_name', default=None, type=str)
     parser.add_argument('--wandb_api_key', default='b45cbe889f5dc79d1e9a0c54013e6ab8e8afb871', type=str)
     args = parser.parse_args()
 
     # Used only for debugging
-    # args.excluded_datasets = [
-    #     'covid-chestxray-dataset',
-    #     'COVID-19-Radiography-Database',
-    #     'Figure1-COVID-chestxray-dataset',
-    #     'rsna_normal',
-    #     'chest_xray_normal'
-    # ]
+    args.excluded_datasets = [
+        'covid-chestxray-dataset',
+        'COVID-19-Radiography-Database',
+        'Figure1-COVID-chestxray-dataset',
+        'rsna_normal',
+        'chest_xray_normal'
+    ]
 
     if 'covid' in args.dataset_dir:
         args.class_name = 'COVID-19'

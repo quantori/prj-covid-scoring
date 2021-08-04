@@ -16,8 +16,8 @@ import segmentation_models_pytorch as smp
 from tools.models import TuningModel
 from tools.datasets import SegmentationDataset
 from tools.supervisely_tools import read_supervisely_project
+from tools.utils import BalancedWeighting, StaticWeighting
 from tools.data_processing import split_data, convert_seconds_to_hms
-from tools.utils import LossBalancedTaskWeighting, StaticWeights
 
 
 def main(config=None):
@@ -85,19 +85,19 @@ def main(config=None):
                   commit=False)
 
         aux_params = None
-        if args.aux_params:
+        if args.use_cls_head:
             aux_params = dict(pooling='avg',
                               dropout=0.5,
                               activation='sigmoid',
                               classes=1)
 
-        if not args.aux_params:
+        if not args.use_cls_head:
             args.loss_cls = None
 
-        weights_strategy = StaticWeights(0.55, 0.45)
-        #weights_strategy = LossBalancedTaskWeighting(0.05)
+        weights_strategy = StaticWeighting(w1=0.55, w2=0.45)
+        # weights_strategy = BalancedWeighting(alpha=0.05)
 
-        # Build modelW
+        # Build model
         model = TuningModel(model_name=config.model_name,
                             encoder_name=config.encoder_name,
                             encoder_weights=config.encoder_weights,
@@ -160,10 +160,9 @@ if __name__ == '__main__':
     parser.add_argument('--batch_size', default=4, type=int)
     parser.add_argument('--es_patience', default=6, type=int)
     parser.add_argument('--es_min_delta', default=0.01, type=float)
-    parser.add_argument('--monitor_metric', default='fscore', type=str)
+    parser.add_argument('--monitor_metric', default='f1_seg', type=str)
     parser.add_argument('--epochs', default=16, type=int)
-    parser.add_argument('--aux_params', default=True, type=bool)
-
+    parser.add_argument('--use_cls_head', default=True, type=bool)
     parser.add_argument('--wandb_project_name', default=None, type=str)
     parser.add_argument('--wandb_api_key', default='b45cbe889f5dc79d1e9a0c54013e6ab8e8afb871', type=str)
     args = parser.parse_args()
@@ -208,16 +207,16 @@ if __name__ == '__main__':
             'encoder_weights': {'value': 'imagenet'},                                         # Possible options: imagenet, ssl or sws
             'batch_size': {'value': args.batch_size},
             'epochs': {'value': args.epochs},
-            'aux_params': {'value': args.aux_params},
+            'use_cls_head': {'value': args.use_cls_head},
             'monitor_metric': {'value': args.monitor_metric},
 
             # Variable hyperparameters
-            'model_name': {'values': ['Unet', 'Unet++', 'DeepLabV3', 'DeepLabV3+', 'FPN', 'Linknet', 'PSPNet', 'PAN']},
+            'model_name': {'values': ['Unet', 'Unet++', 'DeepLabV3', 'DeepLabV3+', 'FPN', 'Linknet', 'PSPNet', 'PAN', 'MAnet']},
             # 'model_name': {'values': ['Unet']},
             'input_size': {'values': get_values(min=384, max=640, step=32, dtype=int)},
             # 'input_size': {'values': [512]},
-            'loss_seg': {'values': ['Dice', 'Jaccard', 'BCE', 'BCEL']},
-            'loss_cls': {'values': ['BCE', 'SmoothL1Loss', 'L1Loss']},                            # TODO (David): Add 2-3 losses
+            'loss_seg': {'values': ['Dice', 'Jaccard', 'BCE', 'BCEL', 'Lovasz', 'Focal']},
+            'loss_cls': {'values': ['BCE', 'SL1', 'L1']},
             # 'loss': {'values': ['Dice']},
             'optimizer': {'values': ['SGD', 'RMSprop', 'Adam', 'AdamW', 'Adam_amsgrad', 'AdamW_amsgrad']},
             # 'optimizer': {'values': ['Adam_amsgrad']},
@@ -238,7 +237,7 @@ if __name__ == '__main__':
     }
 
     sweep_id = wandb.sweep(sweep=sweep_config, entity='viacheslav_danilov', project=args.wandb_project_name)
-    wandb.agent(sweep_id=sweep_id, function=main, count=args.max_runs, entity='viacheslav_danilov', project=args.wandb_project_name)
+    wandb.agent(sweep_id=sweep_id, function=main, count=args.max_runs)
 
     # If the tuning is interrupted, use a specific sweep_id to keep tuning on the next call
     # wandb.agent(sweep_id='cvcok87o', function=main, count=args.max_runs, entity='viacheslav_danilov', project=args.wandb_project_name)

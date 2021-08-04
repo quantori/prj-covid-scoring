@@ -7,12 +7,12 @@ import numpy as np
 
 class EarlyStopping:
     def __init__(self,
-                 monitor_metric: str = None,
-                 patience: int = None,
-                 min_delta: float = 0):
+                 monitor_metric: str,
+                 patience: int = 10,
+                 min_delta: float = 0.01):
         assert min_delta >= 0, 'min_delta must be non-negative'
         assert patience >= 0, 'patience must be non-negative'
-        assert monitor_metric is not None, 'monitor metric should have some value'
+        assert monitor_metric is not None, 'monitor metric should not be None'
 
         self.monitor_metric = monitor_metric
         self.patience = patience
@@ -47,7 +47,7 @@ class EarlyStopping:
                 return False
 
 
-class LossBalancedTaskWeighting:
+class BalancedWeighting:
     def __init__(self, alpha: float = 0.5):
         self.w1 = 0
         self.w2 = 0
@@ -81,7 +81,7 @@ class LossBalancedTaskWeighting:
         self.first_batch_initialized = False
 
 
-class StaticWeights:
+class StaticWeighting:
     def __init__(self, w1=0.55, w2=0.45):
         self.w1 = w1
         self.w2 = w2
@@ -116,13 +116,12 @@ def separate_lungs(mask: np.array):
     assert np.max(mask) <= 1 and np.min(mask) >= 0, 'mask values should be in [0,1] scale, max {}' \
                                                     ' min {}'.format(np.max(mask), np.min(mask))
     binary_map = (mask > 0.5).astype(np.uint8)
-    num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(binary_map, connectivity=8,
-                                                                            ltype=cv2.CV_32S)
+    num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(binary_map, connectivity=8, ltype=cv2.CV_32S)
     centroids = centroids.astype(np.int32)
     lungs = []
 
     if num_labels != 3:
-        warnings.warn('there are more than 2 objects on binary image, this might create problem')
+        warnings.warn('There are more than 2 objects on binary image, this might create problem')
 
     for i in range(1, 3):
         x0, y0 = stats[i, cv2.CC_STAT_LEFT], stats[i, cv2.CC_STAT_TOP]
@@ -138,7 +137,7 @@ def separate_lungs(mask: np.array):
     return left_lung, right_lung
 
 
-def divide_lung(lung: np.array):
+def split_lung_into_segments(lung: np.array):
     rotated_lung = cv2.rotate(lung, cv2.ROTATE_90_CLOCKWISE)
     height, width = rotated_lung.shape
 
@@ -208,12 +207,12 @@ def build_sms_model_from_path(model_path):
     for model in models:
         if model + '_' in model_path:
             if flag:
-                warnings.warn('some errors occurred related to model building(models), this might create problem')
+                warnings.warn('The occurred error is related to the model building (models). This may cause problems!')
             flag = True
             built_model['model_name'] = model
 
     if not flag:
-        warnings.warn('automatic parser didn\'t find model_name')
+        warnings.warn('Automatic parser didn\'t find model_name')
 
     model_path = model_path.replace(built_model['model_name'] + '_', '*')
 
@@ -221,22 +220,22 @@ def build_sms_model_from_path(model_path):
     for encoder in encoders:
         if '*' + encoder + '_' in model_path:
             if flag:
-                warnings.warn('some errors occurred related to model building(encoders), this might create problem')
+                warnings.warn('The occurred error is related to the model building (encoders). This may cause problems!')
             flag = True
             built_model['encoder_name'] = encoder
 
     if not flag:
-        warnings.warn('automatic parser didn\'t find encoder_name')
+        warnings.warn('Automatic parser didn\'t find encoder_name')
 
     flag = False
     for weight in weights:
         if '_' + weight + '_' in model_path:
             if flag:
-                warnings.warn('some errors occurred related to model building(weights), this might create problem')
+                warnings.warn('The occurred error is related to the model building (weights). This may cause problems!')
             flag = True
             built_model['encoder_weights'] = weight
 
     if not flag:
-        warnings.warn('automatic parser didn\'t find encoder_weights')
+        warnings.warn('Automatic parser didn\'t find encoder_weights')
 
     return built_model
