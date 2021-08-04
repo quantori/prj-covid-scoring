@@ -1,8 +1,22 @@
+# PyCharm settings
 .idea
+
+# VSCode settings
+.vscode
+
+# DVC directory
 .dvc
+
+# Dataset
 /dataset/
+
+# Models
 /models*/
+/trained_models/
+
+# Cache files
 __pycache__/
 *.pyc
+
+# W&B
 wandb*/
-trained_models/
