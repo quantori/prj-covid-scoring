@@ -50,16 +50,16 @@ class SegmentationDataset(Dataset):
 
         # Apply transformation
         if self.transform_params:
+            torch_version = torch.__version__
+            interpolation = Image.BICUBIC if torch_version <= '1.7.1' else transforms.InterpolationMode.BICUBIC
             preprocess_image = transforms.Compose([transforms.ToTensor(),
                                                    transforms.Resize(size=self.input_size,
-                                                                     # Image.BICUBIC (PyTorch: 1.7.1), InterpolationMode.BICUBIC  (PyTorch: 1.8.1)
-                                                                     interpolation=Image.BICUBIC),
+                                                                     interpolation=interpolation),
                                                    transforms.Normalize(mean=self.transform_params['mean'],
                                                                         std=self.transform_params['std'])])
             preprocess_mask = transforms.Compose([transforms.ToTensor(),
                                                   transforms.Resize(size=self.input_size,
-                                                                    # Image.NEAREST (PyTorch: 1.7.1), InterpolationMode.NEAREST  (PyTorch: 1.8.1)
-                                                                    interpolation=Image.NEAREST)])
+                                                                    interpolation=interpolation)])
             image = preprocess_image(image)
             mask = preprocess_mask(mask)
 
@@ -227,7 +227,7 @@ if __name__ == '__main__':
     for idx in range(30):
         img, mask, label = dataset[idx]
 
-      # Example of usage of LungsCropper
+    # Example of usage of LungsCropper
     try:
         from . import segmentation_models_pytorch as smp    # (change to single import later)
     except:
