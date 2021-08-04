@@ -6,13 +6,14 @@ from .meter import AverageValueMeter
 
 class Epoch:
 
-    def __init__(self, model, loss_seg, loss_cls, weights_strategy, metrics_seg, metrics_cls, stage_name, device='cpu', verbose=True):
+    def __init__(self, model, loss_seg, loss_cls, threshold, weights_strategy, metrics_seg, metrics_cls, stage_name, device='cpu', verbose=True):
         self.model = model
         self.loss_seg = loss_seg
         self.loss_cls = loss_cls
         self.weights_strategy = weights_strategy
         self.metrics_seg = metrics_seg
         self.metrics_cls = metrics_cls
+        self.threshold = threshold
         self.stage_name = stage_name
         self.verbose = verbose
         self.device = device
@@ -62,7 +63,10 @@ class Epoch:
                     loss_meter_seg.add(loss_seg_np)
                     loss_meter_cls.add(loss_cls_np)
 
-                    pred_cls, z = torch.round(pred_cls.view(-1)), z.view(-1).to(torch.int32)
+                    pred_cls = pred_cls.view(-1)
+                    pred_cls = torch.where(pred_cls >= self.threshold, torch.ones_like(pred_cls), torch.zeros_like(pred_cls))
+
+                    z = z.view(-1).to(torch.int32)
                     pred_seg = pred_seg * pred_cls.view(-1, 1, 1, 1)
 
                     loss_logs = {self.loss_seg.__name__: loss_meter_seg.mean, self.loss_cls.__name__: loss_meter_cls.mean}
@@ -105,7 +109,7 @@ class Epoch:
 
 
 class TrainEpoch(Epoch):
-    def __init__(self, model, loss_seg, loss_cls, weights_strategy, metrics_seg, metrics_cls, optimizer, device='cpu', verbose=True):
+    def __init__(self, model, loss_seg, loss_cls, threshold, weights_strategy, metrics_seg, metrics_cls, optimizer, device='cpu', verbose=True):
         super().__init__(
             model=model,
             loss_seg=loss_seg,
@@ -113,6 +117,7 @@ class TrainEpoch(Epoch):
             weights_strategy=weights_strategy,
             metrics_seg=metrics_seg,
             metrics_cls=metrics_cls,
+            threshold=threshold,
             stage_name='train',
             device=device,
             verbose=verbose,
@@ -148,11 +153,12 @@ class TrainEpoch(Epoch):
 
 class ValidEpoch(Epoch):
 
-    def __init__(self, model, loss_seg, loss_cls, weights_strategy, metrics_seg, metrics_cls, stage_name, device='cpu', verbose=True):
+    def __init__(self, model, loss_seg, loss_cls, threshold, weights_strategy, metrics_seg, metrics_cls, stage_name, device='cpu', verbose=True):
         super().__init__(
             model=model,
             loss_seg=loss_seg,
             loss_cls=loss_cls,
+            threshold=threshold,
             weights_strategy=weights_strategy,
             metrics_seg=metrics_seg,
             metrics_cls=metrics_cls,

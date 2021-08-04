@@ -1,7 +1,11 @@
+import os
+import pickle
 from typing import Dict
 import warnings
 
 import cv2
+import matplotlib.pyplot as plt
+
 import numpy as np
 
 
@@ -239,3 +243,34 @@ def build_sms_model_from_path(model_path):
         warnings.warn('Automatic parser didn\'t find encoder_weights')
 
     return built_model
+
+
+def plot_prec_recall_f1(df, save_dir, name):
+    figure = plt.figure(figsize=(7, 8))
+
+    plt.xlim([0.0, 1.0 + 10e-3])
+    plt.xlabel('threshold')
+
+    plt.plot(df['threshold'], df['recall'], 'red', label="recall")
+    plt.plot(df['threshold'], df['precision'], 'blue', label="precision")
+    plt.plot(df['threshold'], df['f1'], 'orange', label="f1")
+
+    plt.legend(loc="best")
+    plt.savefig(os.path.join(save_dir, name + '.png'), facecolor='white')
+
+
+def plot_prec_recall_iso_f1(df, save_dir, name):
+    figure = plt.figure(figsize=(7, 8))
+    f_scores = np.linspace(0.2, 0.8, num=4)
+
+    for f_score in f_scores:
+        x = np.linspace(0.01, 1)
+        y = f_score * x / (2 * x - f_score)
+        l, = plt.plot(x[y >= 0], y[y >= 0], color='red', alpha=0.2)
+        plt.annotate('f1={0:0.1f}'.format(f_score), xy=(0.9, y[45] + 0.02))
+    plt.plot(df['recall'], df['precision'], 'orange')
+
+    plt.xlim([0.0, 1 + 10e-3])
+    plt.ylim([0.0, 1 + 10e-3])
+    plt.legend(loc="best")
+    plt.savefig(os.path.join(save_dir, name + '.png'), facecolor='white')
