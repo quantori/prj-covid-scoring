@@ -43,25 +43,25 @@ class DiceLoss(base.Loss):
         )
 
 
-class L1Loss(nn.L1Loss, base.Loss):
+class L1Loss(base.Loss, nn.L1Loss):
     pass
 
 
-class MSELoss(nn.MSELoss, base.Loss):
+class MSELoss(base.Loss, nn.MSELoss):
     pass
 
 
-class CrossEntropyLoss(nn.CrossEntropyLoss, base.Loss):
+class CrossEntropyLoss(base.Loss, nn.CrossEntropyLoss):
     pass
 
 
-class NLLLoss(nn.NLLLoss, base.Loss):
+class NLLLoss(base.Loss, nn.NLLLoss):
     pass
 
 
-class BCELoss(nn.BCELoss, base.Loss):
+class BCELoss(base.Loss, nn.BCELoss):
     pass
 
 
-class BCEWithLogitsLoss(nn.BCEWithLogitsLoss, base.Loss):
+class BCEWithLogitsLoss(base.Loss, nn.BCEWithLogitsLoss):
     pass

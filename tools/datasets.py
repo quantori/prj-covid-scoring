@@ -31,7 +31,7 @@ class SegmentationDataset(Dataset):
     def __len__(self):
         return len(self.img_paths)
 
-    def __getitem__(self, idx: int):
+    def __getitem__(self, idx: int) -> Tuple[np.ndarray, np.ndarray, torch.Tensor]:
 
         image_path = self.img_paths[idx]
         ann_path = self.ann_paths[idx]

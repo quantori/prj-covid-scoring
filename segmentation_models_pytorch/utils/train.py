@@ -11,7 +11,6 @@ class Epoch:
         self.loss_seg = loss_seg
         self.loss_cls = loss_cls
         self.weights_strategy = weights_strategy
-
         self.metrics_seg = metrics_seg
         self.metrics_cls = metrics_cls
         self.stage_name = stage_name
@@ -51,7 +50,7 @@ class Epoch:
         else:
             metrics_meters = {metric.__name__: AverageValueMeter() for metric in self.metrics_seg}
         with tqdm(dataloader, desc=self.stage_name, file=sys.stdout, disable=not (self.verbose)) as iterator:
-            for x, y, z in iterator:
+            for x, y, z in iterator:        # x - input image, y - output mask, z - output label
                 x, y, z = x.to(self.device), y.to(self.device), z.to(self.device)
                 loss, pred = self.batch_update(x, y, z)
 
@@ -68,12 +67,10 @@ class Epoch:
 
                     loss_logs = {self.loss_seg.__name__: loss_meter_seg.mean, self.loss_cls.__name__: loss_meter_cls.mean}
 
-                    logs['w1'] = self.weights_strategy.w1
-                    logs['w2'] = self.weights_strategy.w2
+                    logs['weight_seg'] = self.weights_strategy.w1
+                    logs['weight_cls'] = self.weights_strategy.w2
                     logs.update(loss_logs)
 
-                    # FIXME (David): update *_seg and *_cls metrics, debug and then test this section
-                    # FIXME (David): seg metrics are only updated now
                     # Update metric logs
                     for metric_fn in self.metrics_seg:
                         metric_value_seg = metric_fn(pred_seg, y).cpu().detach().numpy()
@@ -133,12 +130,12 @@ class TrainEpoch(Epoch):
             pred_seg, pred_cls = prediction
             loss_seg = self.loss_seg(pred_seg, y)
             loss_cls = self.loss_cls(pred_cls, z)
-            loss_seg_np, loss_cls_np = loss_seg.cpu().detach().numpy(), loss_cls.cpu().detach().numpy()
+            loss_seg_np = loss_seg.cpu().detach().numpy()
+            loss_cls_np = loss_cls.cpu().detach().numpy()
 
             self.weights_strategy.batch_update(loss_seg_np, loss_cls_np)
-            w1, w2 = self.weights_strategy.get_weights()
-
-            loss = loss_seg * w1 + loss_cls * w2
+            weight_seg, weight_cls = self.weights_strategy.get_weights()
+            loss = weight_seg * loss_seg + weight_cls * loss_cls
             loss.backward()
             self.optimizer.step()
             return (self.loss_seg(pred_seg, y), self.loss_cls(pred_cls, z)), prediction

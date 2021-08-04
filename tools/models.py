@@ -5,14 +5,13 @@ from typing import List, Dict, Tuple, Any, Union
 import cv2
 import wandb
 import torch
-import torchvision.transforms as transforms
-
 import numpy as np
 from PIL import Image
 import segmentation_models_pytorch as smp
+import torchvision.transforms as transforms
 
 from tools.data_processing import log_dataset
-from tools.utils import EarlyStopping, divide_lung, find_obj_bbox, separate_lungs, LossBalancedTaskWeighting
+from tools.utils import EarlyStopping, split_lung_into_segments, find_obj_bbox, separate_lungs
 
 
 class SegmentationModel:
@@ -35,7 +34,7 @@ class SegmentationModel:
                  lr: float = 0.0001,
                  es_patience: int = None,
                  es_min_delta: float = 0,
-                 monitor_metric: str = 'fscore',
+                 monitor_metric: str = 'f1_seg',
                  logging_labels: Dict[int, str] = None,
                  save_dir: str = 'models',
                  wandb_api_key: str = 'b45cbe889f5dc79d1e9a0c54013e6ab8e8afb871',
@@ -80,6 +79,7 @@ class SegmentationModel:
             'model_name': self.model_name,
             'encoder_name': self.encoder_name,
             'encoder_weights': self.encoder_weights,
+            'aux_params': self.aux_params,
             'batch_size': self.batch_size,
             'epochs': self.epochs,
             'img_height': self.input_size[0],
@@ -100,25 +100,10 @@ class SegmentationModel:
         return hyperparameters
 
     @staticmethod
-    def set_names(metrics: List, attributes: List):
-        assert len(metrics) == len(attributes), 'shapes of metrics and attributes aren\'t equal'
-        for idx, metric in enumerate(metrics):
-            metric._name = attributes[idx]
-
-        return metrics
-
-    @staticmethod
-    def _change_loss_name(metrics: Dict[str, float],
-                          search_pattern: str) -> Dict[str, float]:
-        for k in metrics.copy():
-            if search_pattern in k:
-                metrics['loss'] = metrics[k]
-                del metrics[k]
-                break
-        return metrics
-
-    @staticmethod
-    def _get_log_params(model: Any, img_height: int, img_width: int, img_channels: int) -> Dict[str, float]:
+    def _get_log_params(model: Any,
+                        img_height: int,
+                        img_width: int,
+                        img_channels: int) -> Dict[str, float]:
         from ptflops import get_model_complexity_info
         _macs, _params = get_model_complexity_info(model, (img_channels, img_height, img_width),
                                                    as_strings=False, print_per_layer_stat=False, verbose=False)
@@ -143,8 +128,7 @@ class SegmentationModel:
     def _get_log_images(self,
                         model: Any,
                         log_image_size: Tuple[int, int],
-                        logging_loader: torch.utils.data.dataloader.DataLoader) -> Tuple[
-        List[wandb.Image], List[wandb.Image]]:
+                        logging_loader: torch.utils.data.dataloader.DataLoader) -> Tuple[List[wandb.Image], List[wandb.Image]]:
 
         model.eval()
         mean = torch.tensor(logging_loader.dataset.transform_params['mean'])
@@ -175,6 +159,7 @@ class SegmentationModel:
                 mask_pred = (mask_pred > 0.5).detach().cpu().numpy().astype(np.uint8)
                 mask_pred = cv2.resize(mask_pred, log_image_size, interpolation=cv2.INTER_NEAREST)
 
+                # TODO: Log source probability map without nullifying
                 prob_map = torch.clone(pred_seg).squeeze()
                 prob_map = (prob_map * 255).detach().cpu().numpy().astype(np.uint8)
                 prob_map = cv2.resize(prob_map, log_image_size, interpolation=cv2.INTER_CUBIC)
@@ -205,10 +190,7 @@ class SegmentationModel:
                                                                      self.in_channels) + '\033[0m')
         print('\033[92m' + 'Batch size:       {:d}'.format(self.batch_size) + '\033[0m')
         print('\033[92m' + 'Seg. loss:        {:s}'.format(self.loss_seg) + '\033[0m')
-        if self.loss_cls is None:
-            print('\033[92m' + 'Cls. loss:        {:s}'.format('None') + '\033[0m')
-        else:
-            print('\033[92m' + 'Cls. loss:        {:s}'.format(self.loss_cls) + '\033[0m')
+        print('\033[92m' + 'Cls. loss:        {}'.format(self.loss_cls) + '\033[0m')
         print('\033[92m' + 'Optimizer:        {:s}'.format(self.optimizer) + '\033[0m')
         print('\033[92m' + 'Learning rate:    {:.4f}'.format(self.lr) + '\033[0m')
         print('\033[92m' + 'Class count:      {:d}'.format(self.num_classes) + '\033[0m')
@@ -307,7 +289,7 @@ class SegmentationModel:
                               activation=self.activation,
                               aux_params=self.aux_params)
         else:
-            raise ValueError('Unknown model name:'.format(self.model_name))
+            raise ValueError('Unknown model name: {:s}'.format(self.model_name))
 
         return model
 
@@ -348,35 +330,41 @@ class SegmentationModel:
         return optimizer
 
     @staticmethod
-    def build_loss(loss_seg: str, loss_cls: str = None) -> (Any, Any):
+    def build_loss(loss_seg: str, loss_cls: str = None) -> Tuple[Any, Any]:
         if loss_seg == 'Dice':
             loss_seg = smp.utils.losses.DiceLoss()
+            loss_seg._name = 'loss_seg'
         elif loss_seg == 'Jaccard':
             loss_seg = smp.utils.losses.JaccardLoss()
+            loss_seg._name = 'loss_seg'
         elif loss_seg == 'BCE':
             loss_seg = smp.utils.losses.BCELoss()
+            loss_seg._name = 'loss_seg'
         elif loss_seg == 'BCEL':
             loss_seg = smp.utils.losses.BCEWithLogitsLoss()
-        elif loss_seg == 'LovaszLoss':
+            loss_seg._name = 'loss_seg'
+        elif loss_seg == 'Lovasz':
             loss_seg = smp.losses.LovaszLoss(mode='binary')
-        elif loss_seg == 'FocalLoss':
+            loss_seg.__name__ = 'loss_seg'
+        elif loss_seg == 'Focal':
             loss_seg = smp.losses.FocalLoss(mode='binary')
+            loss_seg.__name__ = 'loss_seg'
         else:
-            raise ValueError('Unknown loss: {}'.format(loss_seg))
+            raise ValueError('Unknown segmentation loss: {}'.format(loss_seg))
 
         if loss_cls is None:
             pass
         elif loss_cls == 'BCE':
             loss_cls = torch.nn.BCELoss()
-            loss_cls.__name__ = 'bce_cls_loss'
-        elif loss_cls == 'SmoothL1Loss':
+            loss_cls.__name__ = 'loss_cls'
+        elif loss_cls == 'SL1':
             loss_cls = torch.nn.SmoothL1Loss()
-            loss_cls.__name__ = 'smooth_l1_loss'
-        elif loss_cls == 'L1Loss':
+            loss_cls.__name__ = 'loss_cls'
+        elif loss_cls == 'L1':
             loss_cls = torch.nn.L1Loss()
-            loss_cls.__name__ = 'l1_loss'
+            loss_cls.__name__ = 'loss_cls'
         else:
-            raise ValueError('Unknown loss: {}'.format(loss_cls))
+            raise ValueError('Unknown classification loss: {}'.format(loss_cls))
 
         return loss_seg, loss_cls
 
@@ -405,22 +393,16 @@ class SegmentationModel:
                                     patience=self.es_patience,
                                     min_delta=self.es_min_delta)
 
-        metrics_seg = [smp.utils.metrics.Fscore(threshold=0.5),
-                       smp.utils.metrics.IoU(threshold=0.5),
-                       smp.utils.metrics.Accuracy(threshold=0.5),
-                       smp.utils.metrics.Precision(threshold=0.5),
-                       smp.utils.metrics.Recall(threshold=0.5)]
-        metrics_seg = SegmentationModel.set_names(metrics_seg,
-                                                  ['fscore_seg', 'iou_seg', 'accuracy_seg', 'precision_seg',
-                                                   'recall_seg'])
+        metrics_seg = [smp.utils.metrics.Fscore(threshold=0.5, name='f1_seg'),
+                       smp.utils.metrics.IoU(threshold=0.5, name='iou_seg'),
+                       smp.utils.metrics.Accuracy(threshold=0.5, name='accuracy_seg'),
+                       smp.utils.metrics.Precision(threshold=0.5, name='precision_seg'),
+                       smp.utils.metrics.Recall(threshold=0.5, name='recall_seg')]
 
-        metrics_cls = [smp.utils.metrics.Accuracy(threshold=0.5),
-                       smp.utils.metrics.Precision(threshold=0.5),
-                       smp.utils.metrics.Recall(threshold=0.5),
-                       smp.utils.metrics.Fscore(threshold=0.5)]
-
-        metrics_cls = SegmentationModel.set_names(metrics_cls,
-                                                  ['accuracy_cls', 'precision_cls', 'recall_cls', 'f1_cls'])
+        metrics_cls = [smp.utils.metrics.Fscore(threshold=0.5, name='f1_cls'),
+                       smp.utils.metrics.Accuracy(threshold=0.5, name='accuracy_cls'),
+                       smp.utils.metrics.Precision(threshold=0.5, name='precision_cls'),
+                       smp.utils.metrics.Recall(threshold=0.5, name='recall_cls')]
 
         train_epoch = smp.utils.train.TrainEpoch(model, loss_seg=loss_seg, loss_cls=loss_cls,
                                                  weights_strategy=self.weights_strategy,
@@ -429,7 +411,7 @@ class SegmentationModel:
 
         valid_epoch = smp.utils.train.ValidEpoch(model, loss_seg=loss_seg, loss_cls=loss_cls,
                                                  weights_strategy=self.weights_strategy,
-                                                 metrics_seg=metrics_seg, metrics_cls=metrics_cls, stage_name='valid',
+                                                 metrics_seg=metrics_seg, metrics_cls=metrics_cls, stage_name='val',
                                                  device=self.device)
 
         test_epoch = smp.utils.train.ValidEpoch(model, loss_seg=loss_seg, loss_cls=loss_cls,
@@ -447,25 +429,21 @@ class SegmentationModel:
             os.environ['WANDB_SILENT'] = "true"
             os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
             run = wandb.init(project=self.wandb_project_name, entity='viacheslav_danilov', name=self.run_name,
-                             config=hyperparameters, tags=[self.model_name, self.encoder_name, self.encoder_weights])
+                             config=hyperparameters, tags=[self.model_name, self.encoder_name])
             log_dataset(run, [train_loader, val_loader, test_loader], artefact_name=self.class_name)
 
-        params = self._get_log_params(model, img_height=self.input_size[0], img_width=self.input_size[1],
-                                      img_channels=self.in_channels)
+        params = self._get_log_params(model, img_height=self.input_size[0], img_width=self.input_size[1], img_channels=self.in_channels)
         wandb.log(data=params, commit=False)
 
         best_train_score, mode = (np.inf, 'min') if 'loss' in self.monitor_metric else (-np.inf, 'max')
         best_val_score, mode = (np.inf, 'min') if 'loss' in self.monitor_metric else (-np.inf, 'max')
         best_test_score, mode = (np.inf, 'min') if 'loss' in self.monitor_metric else (-np.inf, 'max')
         for epoch in range(0, self.epochs):
-            print('\nEpoch: {:03d}, LR: {:.5f}'.format(epoch, optimizer.param_groups[0]['lr']))
+            print('\nEpoch: {:03d} | LR: {:.5f}'.format(epoch, optimizer.param_groups[0]['lr']))
 
             train_logs = train_epoch.run(train_loader)
             val_logs = valid_epoch.run(val_loader)
             test_logs = test_epoch.run(test_loader)
-            train_logs = self._change_loss_name(metrics=train_logs, search_pattern='loss')
-            val_logs = self._change_loss_name(metrics=val_logs, search_pattern='loss')
-            test_logs = self._change_loss_name(metrics=test_logs, search_pattern='loss')
 
             if (best_train_score < train_logs[self.monitor_metric] and mode == 'max') or \
                     (best_train_score > train_logs[self.monitor_metric] and mode == 'min'):
@@ -488,9 +466,9 @@ class SegmentationModel:
                     best_test_score = test_logs[self.monitor_metric]
                     wandb.log(data={'best/test_score': best_test_score, 'best/test_epoch': epoch}, commit=False)
 
-            metrics_seg = self._get_log_metrics(train_logs, val_logs, test_logs)
+            metrics_log = self._get_log_metrics(train_logs, val_logs, test_logs)
             masks, maps = self._get_log_images(model=model, log_image_size=(1000, 1000), logging_loader=logging_loader)
-            wandb.log(data=metrics_seg, commit=False)
+            wandb.log(data=metrics_log, commit=False)
             wandb.log(data={'Segmentation masks': masks, 'Probability maps': maps})
 
             es_callback(val_logs)
@@ -525,7 +503,7 @@ class TuningModel(SegmentationModel):
                  es_patience: int = None,
                  es_min_delta: float = 0,
                  lr: float = 0.0001,
-                 monitor_metric: str = 'fscore'):
+                 monitor_metric: str = 'f1_seg'):
         super().__init__()
         self.model_name = model_name
         self.encoder_name = encoder_name
@@ -558,22 +536,16 @@ class TuningModel(SegmentationModel):
                                     patience=self.es_patience,
                                     min_delta=self.es_min_delta)
 
-        metrics_seg = [smp.utils.metrics.Fscore(threshold=0.5),
-                       smp.utils.metrics.IoU(threshold=0.5),
-                       smp.utils.metrics.Accuracy(threshold=0.5),
-                       smp.utils.metrics.Precision(threshold=0.5),
-                       smp.utils.metrics.Recall(threshold=0.5)]
-        metrics_seg = SegmentationModel.set_names(metrics_seg,
-                                                  ['fscore_seg', 'iou_seg', 'accuracy_seg', 'precision_seg',
-                                                   'recall_seg'])
+        metrics_seg = [smp.utils.metrics.Fscore(threshold=0.5, name='f1_seg'),
+                       smp.utils.metrics.IoU(threshold=0.5, name='iou_seg'),
+                       smp.utils.metrics.Accuracy(threshold=0.5, name='accuracy_seg'),
+                       smp.utils.metrics.Precision(threshold=0.5, name='precision_seg'),
+                       smp.utils.metrics.Recall(threshold=0.5, name='recall_seg')]
 
-        metrics_cls = [smp.utils.metrics.Accuracy(threshold=0.5),
-                       smp.utils.metrics.Precision(threshold=0.5),
-                       smp.utils.metrics.Recall(threshold=0.5),
-                       smp.utils.metrics.Fscore(threshold=0.5)]
-
-        metrics_cls = SegmentationModel.set_names(metrics_cls,
-                                                  ['accuracy_cls', 'precision_cls', 'recall_cls', 'f1_cls'])
+        metrics_cls = [smp.utils.metrics.Fscore(threshold=0.5, name='f1_cls'),
+                       smp.utils.metrics.Accuracy(threshold=0.5, name='accuracy_cls'),
+                       smp.utils.metrics.Precision(threshold=0.5, name='precision_cls'),
+                       smp.utils.metrics.Recall(threshold=0.5, name='recall_cls')]
 
         train_epoch = smp.utils.train.TrainEpoch(model, loss_seg=loss_seg, loss_cls=loss_cls,
                                                  weights_strategy=self.weights_strategy,
@@ -590,8 +562,7 @@ class TuningModel(SegmentationModel):
                                                 metrics_seg=metrics_seg, metrics_cls=metrics_cls, stage_name='test',
                                                 device=self.device)
 
-        params = self._get_log_params(model, img_height=self.input_size[0], img_width=self.input_size[1],
-                                      img_channels=self.in_channels)
+        params = self._get_log_params(model, img_height=self.input_size[0], img_width=self.input_size[1], img_channels=self.in_channels)
         wandb.log(data=params, commit=False)
 
         best_train_score, mode = (np.inf, 'min') if 'loss' in self.monitor_metric else (-np.inf, 'max')
@@ -603,9 +574,6 @@ class TuningModel(SegmentationModel):
             train_logs = train_epoch.run(train_loader)
             val_logs = valid_epoch.run(val_loader)
             test_logs = test_epoch.run(test_loader)
-            train_logs = self._change_loss_name(metrics=train_logs, search_pattern='loss')
-            val_logs = self._change_loss_name(metrics=val_logs, search_pattern='loss')
-            test_logs = self._change_loss_name(metrics=test_logs, search_pattern='loss')
 
             if (best_train_score < train_logs[self.monitor_metric] and mode == 'max') or \
                     (best_train_score > train_logs[self.monitor_metric] and mode == 'min'):
@@ -743,8 +711,8 @@ class CovidScoringNet:
         covid_predicted = (covid_predicted > 0.5).astype(np.uint8)
 
         left_lung, right_lung = separate_lungs(lungs_predicted)
-        left_lung_1, left_lung_2, left_lung_3 = divide_lung(left_lung)
-        right_lung_1, right_lung_2, right_lung_3 = divide_lung(right_lung)
+        left_lung_1, left_lung_2, left_lung_3 = split_lung_into_segments(left_lung)
+        right_lung_1, right_lung_2, right_lung_3 = split_lung_into_segments(right_lung)
 
         lung_parts = np.stack([left_lung_1, left_lung_2, left_lung_3, right_lung_1, right_lung_2, right_lung_3], axis=0)
         covid_intersection_lung_parts = covid_predicted * lung_parts
