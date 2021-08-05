@@ -96,6 +96,26 @@ class StaticWeighting:
         pass
 
 
+class EqualImpactWeighting:
+    def __init__(self, w1=0.5, w2=0.5):
+        self.w1 = w1
+        self.w2 = w2
+
+    def get_weights(self):
+        return self.w1, self.w2
+
+    def end_of_iteration(self):
+        pass
+
+    def batch_update(self, loss_seg_np, loss_cls_np):
+        if loss_seg_np > loss_cls_np:
+            self.w1 = 1.0
+            self.w2 = loss_seg_np / loss_cls_np
+        else:
+            self.w2 = 1.0
+            self.w1 = loss_cls_np / loss_seg_np
+
+
 def binary_search(img: np.array, threshold_start: int, threshold_end: int, optimal_area: float):
     assert len(img.shape) == 2, 'invalid shape'
     best_value = None
