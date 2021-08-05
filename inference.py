@@ -8,18 +8,22 @@ from tqdm import tqdm
 from tools.supervisely_tools import read_supervisely_project
 from tools.models import CovidScoringNet, SegmentationModel
 from tools.datasets import InferenceDataset
-from tools.utils import build_sms_model_from_path
+from tools.utils import build_sms_model_from_path, mask_2_base64
 
 
 def inference(model, inference_dataset, output_csv_filename):
     model.eval()
-    csv_file = {'filename': [], 'score': []}
-
+    csv_file = {'filename': [], 'score': [], 'lungs_predicted': [], 'covid_predicted': []}
     for source_img, img_filename in tqdm(inference_dataset):
-        predicted_score = model.predict(source_img)
+        predicted_score, lungs_predicted, covid_predicted = model.predict(source_img)
+        lungs_predicted_converted = mask_2_base64(lungs_predicted * 255)
+        covid_predicted_converted = mask_2_base64(covid_predicted * 255)
 
         csv_file['filename'].append(img_filename)
         csv_file['score'].append(predicted_score)
+        csv_file['lungs_predicted'].append(lungs_predicted_converted)
+        csv_file['covid_predicted'].append(covid_predicted_converted)
+
     df = pd.DataFrame(csv_file)
     df.to_csv(output_csv_filename, index=False)
 
@@ -40,6 +44,7 @@ if __name__ == '__main__':
     parser.add_argument('--covid_activation', default='sigmoid', type=str)
     parser.add_argument('--covid_dropout', default=0.5, type=float)
     parser.add_argument('--covid_aux_params', default=True, type=bool)
+    parser.add_argument('--covid_input_size', default=(512, 512), type=int)
 
     parser.add_argument('--lung_model_path', type=str)
     parser.add_argument('--lung_model_name', default='Unet', type=str)
@@ -50,9 +55,9 @@ if __name__ == '__main__':
     parser.add_argument('--lung_activation', default='sigmoid', type=str)
     parser.add_argument('--lung_dropout', default=0.5, type=float)
     parser.add_argument('--lung_aux_params', default=False, type=bool)
+    parser.add_argument('--lung_input_size', default=(512, 512), type=int)
 
     parser.add_argument('--automatic_parser', default=True, type=bool)
-    parser.add_argument('--input_size', default=(512, 512), type=int)
     parser.add_argument('--threshold', default=0.5, type=float)
     args = parser.parse_args()
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -113,9 +118,9 @@ if __name__ == '__main__':
                                                                       pretrained=args.lung_encoder_weights)
 
     img_paths, ann_paths, dataset_names = read_supervisely_project(args.data_dir)
-    inference_dataset = InferenceDataset(img_paths, input_size=args.input_size)
+    inference_dataset = InferenceDataset(img_paths, input_size=args.lung_input_size)
 
-    model = CovidScoringNet(lung_sg, covid_sg, device, args.threshold, args.input_size, covid_preprocessing_params,
-                            lung_preprocessing_params, flag_type='single_crop')
+    model = CovidScoringNet(lung_sg, covid_sg, device, args.threshold, args.covid_input_size,  args.lung_input_size,
+                            covid_preprocessing_params, lung_preprocessing_params, flag_type='single_crop') #no_crop  crop  single_crop
 
     inference(model, inference_dataset, args.output_csv_filename)

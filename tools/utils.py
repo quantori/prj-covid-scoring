@@ -1,8 +1,12 @@
 from typing import Dict
 import warnings
 
+import base64
 import cv2
+import io
 import numpy as np
+from PIL import Image
+import zlib
 
 
 class EarlyStopping:
@@ -239,3 +243,26 @@ def build_sms_model_from_path(model_path):
         warnings.warn('Automatic parser didn\'t find encoder_weights')
 
     return built_model
+
+
+def mask_2_base64(mask):
+    img_pil = Image.fromarray(np.array(mask, dtype=np.uint8))
+    img_pil.putpalette([0, 0, 0, 255, 255, 255])
+    bytes_io = io.BytesIO()
+    img_pil.save(bytes_io, format='PNG', transparency=0, optimize=0)
+    bytes = bytes_io.getvalue()
+    return base64.b64encode(zlib.compress(bytes)).decode('utf-8')
+
+
+def convert_base64_to_image(s: str) -> np.ndarray:
+    z = zlib.decompress(base64.b64decode(s))
+    n = np.frombuffer(z, np.uint8)
+
+    img_decoded = cv2.imdecode(n, cv2.IMREAD_UNCHANGED)
+    if (len(img_decoded.shape) == 3) and (img_decoded.shape[2] >= 4):
+        mask = img_decoded[:, :, 3].astype(np.uint8)  # 4-channel images
+    elif len(img_decoded.shape) == 2:
+        mask = img_decoded.astype(np.uint8)  # flat 2D mask
+    else:
+        raise RuntimeError('Wrong internal mask format.')
+    return mask
