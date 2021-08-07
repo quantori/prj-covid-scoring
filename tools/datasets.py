@@ -51,15 +51,16 @@ class SegmentationDataset(Dataset):
         # Apply transformation
         if self.transform_params:
             torch_version = torch.__version__
-            interpolation = Image.BICUBIC if torch_version <= '1.7.1' else transforms.InterpolationMode.BICUBIC
+            interpolation_image = Image.BICUBIC if torch_version <= '1.7.1' else transforms.InterpolationMode.BICUBIC
+            interpolation_mask = Image.NEAREST if torch_version <= '1.7.1' else transforms.InterpolationMode.NEAREST
             preprocess_image = transforms.Compose([transforms.ToTensor(),
                                                    transforms.Resize(size=self.input_size,
-                                                                     interpolation=interpolation),
+                                                                     interpolation=interpolation_image),
                                                    transforms.Normalize(mean=self.transform_params['mean'],
                                                                         std=self.transform_params['std'])])
             preprocess_mask = transforms.Compose([transforms.ToTensor(),
                                                   transforms.Resize(size=self.input_size,
-                                                                    interpolation=interpolation)])
+                                                                    interpolation=interpolation_mask)])
             image = preprocess_image(image)
             mask = preprocess_mask(mask)
 
