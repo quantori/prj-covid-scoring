@@ -56,7 +56,7 @@ def main(config=None):
                                  width=config.input_size,
                                  w2h_ratio=1.0,
                                  p=0.2),
-            albu.Rotate(15),
+            albu.Rotate(limit=15, p=0.5),
             albu.HorizontalFlip(p=0.5),
             albu.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2, p=0.2)
         ])
@@ -146,14 +146,14 @@ def get_values(min: int, max: int, step: int, dtype) -> Union[List[int], List[fl
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='Tuning pipeline')
-    parser.add_argument('--dataset_dir', default='dataset/lungs_segmentation', type=str,
+    parser.add_argument('--dataset_dir', default='dataset/covid_segmentation_single_crop', type=str,
                         help='dataset/covid_segmentation, '
                              'dataset/covid_segmentation_single_crop, '
                              'dataset/covid_segmentation_double_crop,'
                              'dataset/lungs_segmentation')
     parser.add_argument('--included_datasets', default=None, type=str)
     parser.add_argument('--excluded_datasets', default=None, type=str)
-    parser.add_argument('--data_fraction_used', default=0.1, type=float)
+    parser.add_argument('--data_fraction_used', default=1.0, type=float)
     parser.add_argument('--ratio', nargs='+', default=(0.8, 0.2, 0.0), type=float, help='(train_size, val_size, test_size)')
     parser.add_argument('--tuning_method', default='random', type=str, help='grid, random, bayes')
     parser.add_argument('--max_runs', default=300, type=int, help='number of trials to run')
@@ -162,7 +162,7 @@ if __name__ == '__main__':
     parser.add_argument('--es_min_delta', default=0.01, type=float)
     parser.add_argument('--monitor_metric', default='f1_seg', type=str)
     parser.add_argument('--epochs', default=16, type=int)
-    parser.add_argument('--use_cls_head', default=False, type=bool)
+    parser.add_argument('--use_cls_head', default=True, type=bool)
     parser.add_argument('--wandb_project_name', default=None, type=str)
     parser.add_argument('--wandb_api_key', default='b45cbe889f5dc79d1e9a0c54013e6ab8e8afb871', type=str)
     args = parser.parse_args()

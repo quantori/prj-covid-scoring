@@ -38,7 +38,6 @@ def main(args):
         albu.HorizontalFlip(p=0.5),
         albu.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2, p=0.2)
     ])
-    # augmentation_params = None     # TODO: remove after debugging
 
     datasets = {}
     for subset_name in subsets:
@@ -94,7 +93,7 @@ def main(args):
     if not args.use_cls_head:
         args.loss_cls = None
 
-    weights_strategy = StaticWeighting(w1=0.55, w2=0.45)
+    weights_strategy = StaticWeighting(w1=1.0, w2=1.0)
     # weights_strategy = BalancedWeighting(alpha=0.05)
 
     model = SegmentationModel(model_name=args.model_name,
@@ -122,7 +121,11 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Segmentation pipeline')
-    parser.add_argument('--dataset_dir', default='dataset/covid_segmentation_single_crop', type=str, help='dataset/covid_segmentation or dataset/lungs_segmentation')
+    parser.add_argument('--dataset_dir', default='dataset/covid_segmentation_single_crop', type=str,
+                        help='dataset/covid_segmentation, '
+                             'dataset/covid_segmentation_single_crop, '
+                             'dataset/covid_segmentation_double_crop,'
+                             'dataset/lungs_segmentation')
     parser.add_argument('--included_datasets', default=None, type=str)
     parser.add_argument('--excluded_datasets', default=None, type=str)
     parser.add_argument('--ratio', nargs='+', default=(0.8, 0.1, 0.1), type=float, help='train, val, and test sizes')
@@ -134,7 +137,7 @@ if __name__ == '__main__':
     parser.add_argument('--loss_seg', default='Dice', type=str, help='Dice, Jaccard, BCE, BCEL, Lovasz or Focal')
     parser.add_argument('--loss_cls', default='SL1', type=str, help='BCE, SL1 or L1')
     parser.add_argument('--optimizer', default='Adam', type=str, help='SGD, Adam, AdamW, RMSprop, Adam_amsgrad or AdamW_amsgrad')
-    parser.add_argument('--lr', default=0.0001, type=float)
+    parser.add_argument('--lr', default=0.001, type=float)
     parser.add_argument('--es_patience', default=10, type=int)
     parser.add_argument('--es_min_delta', default=0.01, type=float)
     parser.add_argument('--monitor_metric', default='f1_seg', type=str)
@@ -146,13 +149,13 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     # Used only for debugging
-    args.excluded_datasets = [
-        'covid-chestxray-dataset',
-        'COVID-19-Radiography-Database',
-        'Figure1-COVID-chestxray-dataset',
-        'rsna_normal',
-        'chest_xray_normal'
-    ]
+    # args.excluded_datasets = [
+    #     'covid-chestxray-dataset',
+    #     'COVID-19-Radiography-Database',
+    #     'Figure1-COVID-chestxray-dataset',
+    #     'rsna_normal',
+    #     'chest_xray_normal'
+    # ]
 
     if 'covid' in args.dataset_dir:
         args.class_name = 'COVID-19'
