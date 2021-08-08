@@ -29,7 +29,7 @@ class Epoch:
             metric.to(self.device)
 
     def _format_logs(self, logs):
-        str_logs = ['{} - {:.4}'.format(k, v) for k, v in logs.items()]
+        str_logs = ['{} - {:.3}'.format(k, v) for k, v in logs.items()]
         s = ', '.join(str_logs)
         return s
 
@@ -49,7 +49,7 @@ class Epoch:
             metrics_meters = {metric.__name__: AverageValueMeter() for metric in self.metrics_seg + self.metrics_cls}
         else:
             metrics_meters = {metric.__name__: AverageValueMeter() for metric in self.metrics_seg}
-        with tqdm(dataloader, desc=self.stage_name, file=sys.stdout, disable=not (self.verbose)) as iterator:
+        with tqdm(dataloader, desc='{:5s}'.format(self.stage_name), file=sys.stdout, disable=not (self.verbose)) as iterator:
             for x, y, z in iterator:        # x - input image, y - output mask, z - output label
                 x, y, z = x.to(self.device), y.to(self.device), z.to(self.device)
                 loss, pred = self.batch_update(x, y, z)
@@ -67,8 +67,9 @@ class Epoch:
 
                     loss_logs = {self.loss_seg.__name__: loss_meter_seg.mean, self.loss_cls.__name__: loss_meter_cls.mean}
 
-                    logs['weight_seg'] = self.weights_strategy.w1
-                    logs['weight_cls'] = self.weights_strategy.w2
+                    # Uncomment for printing out weights each epoch 
+                    # logs['weight_seg'] = self.weights_strategy.w1
+                    # logs['weight_cls'] = self.weights_strategy.w2
                     logs.update(loss_logs)
 
                     # Update metric logs
