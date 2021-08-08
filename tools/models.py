@@ -408,10 +408,10 @@ class SegmentationModel:
                                                  metrics_seg=metrics_seg, metrics_cls=metrics_cls, optimizer=optimizer,
                                                  device=self.device)
 
-        valid_epoch = smp.utils.train.ValidEpoch(model, loss_seg=loss_seg, loss_cls=loss_cls,
-                                                 weights_strategy=self.weights_strategy,
-                                                 metrics_seg=metrics_seg, metrics_cls=metrics_cls, stage_name='val',
-                                                 device=self.device)
+        val_epoch = smp.utils.train.ValidEpoch(model, loss_seg=loss_seg, loss_cls=loss_cls,
+                                               weights_strategy=self.weights_strategy,
+                                               metrics_seg=metrics_seg, metrics_cls=metrics_cls, stage_name='val',
+                                               device=self.device)
 
         test_epoch = smp.utils.train.ValidEpoch(model, loss_seg=loss_seg, loss_cls=loss_cls,
                                                 weights_strategy=self.weights_strategy,
@@ -441,7 +441,7 @@ class SegmentationModel:
             print('\nEpoch: {:03d} | LR: {:.5f}'.format(epoch, optimizer.param_groups[0]['lr']))
 
             train_logs = train_epoch.run(train_loader)
-            val_logs = valid_epoch.run(val_loader)
+            val_logs = val_epoch.run(val_loader)
             test_logs = test_epoch.run(test_loader)
 
             if (best_train_score < train_logs[self.monitor_metric] and mode == 'max') or \
@@ -528,6 +528,7 @@ class TuningModel(SegmentationModel):
               test_loader: torch.utils.data.dataloader.DataLoader,
               logging_loader: torch.utils.data.dataloader.DataLoader = None) -> None:
 
+        self.print_model_settings()
         model = self.get_model()
         optimizer = self.build_optimizer(model=model, optimizer=self.optimizer, lr=self.lr)
         loss_seg, loss_cls = self.build_loss(loss_seg=self.loss_seg, loss_cls=self.loss_cls)
@@ -551,10 +552,10 @@ class TuningModel(SegmentationModel):
                                                  metrics_seg=metrics_seg, metrics_cls=metrics_cls, optimizer=optimizer,
                                                  device=self.device)
 
-        valid_epoch = smp.utils.train.ValidEpoch(model, loss_seg=loss_seg, loss_cls=loss_cls,
-                                                 weights_strategy=self.weights_strategy,
-                                                 metrics_seg=metrics_seg, metrics_cls=metrics_cls, stage_name='valid',
-                                                 device=self.device)
+        val_epoch = smp.utils.train.ValidEpoch(model, loss_seg=loss_seg, loss_cls=loss_cls,
+                                               weights_strategy=self.weights_strategy,
+                                               metrics_seg=metrics_seg, metrics_cls=metrics_cls, stage_name='val',
+                                               device=self.device)
 
         test_epoch = smp.utils.train.ValidEpoch(model, loss_seg=loss_seg, loss_cls=loss_cls,
                                                 weights_strategy=self.weights_strategy,
@@ -571,7 +572,7 @@ class TuningModel(SegmentationModel):
             print('\nEpoch: {:03d}, LR: {:.5f}'.format(epoch, optimizer.param_groups[0]['lr']))
 
             train_logs = train_epoch.run(train_loader)
-            val_logs = valid_epoch.run(val_loader)
+            val_logs = val_epoch.run(val_loader)
             test_logs = test_epoch.run(test_loader)
 
             if (best_train_score < train_logs[self.monitor_metric] and mode == 'max') or \
