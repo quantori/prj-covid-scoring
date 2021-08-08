@@ -86,7 +86,7 @@ def main(args):
     aux_params = None
     if args.use_cls_head:
         aux_params = dict(pooling='avg',
-                          dropout=0.25,
+                          dropout=0.20,
                           activation='sigmoid',
                           classes=1)
 
