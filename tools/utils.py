@@ -125,7 +125,9 @@ def separate_lungs(mask: np.array):
     lungs = []
 
     if num_labels != 3:
-        warnings.warn('There are more than 2 objects on binary image, this might create problem')
+        warnings.warn('There aren\'t 2 objects on predicted mask, this might cause incorrect results')
+        stats = np.append(stats, [stats[-1]], axis=0)
+        centroids = np.append(centroids, [centroids[-1]], axis=0)
 
     for i in range(1, 3):
         x0, y0 = stats[i, cv2.CC_STAT_LEFT], stats[i, cv2.CC_STAT_TOP]
@@ -173,7 +175,7 @@ def find_obj_bbox(mask: np.array):
     return bbox_coordinates
 
 
-def build_sms_model_from_path(model_path):
+def build_smp_model_from_path(model_path):
     models = ['Unet', 'Unet++', 'DeepLabV3', 'DeepLabV3+', 'FPN', 'Linknet', 'PSPNet', 'PAN']
 
     encoders = ['resnet18', 'resnet34', 'resnet50', 'resnet101', 'resnet152', "resnext50_32x4d", "resnext101_32x4d",
@@ -254,7 +256,7 @@ def mask_2_base64(mask):
     return base64.b64encode(zlib.compress(bytes)).decode('utf-8')
 
 
-def convert_base64_to_image(s: str) -> np.ndarray:
+def base64_to_image(s: str) -> np.ndarray:
     z = zlib.decompress(base64.b64decode(s))
     n = np.frombuffer(z, np.uint8)
 
@@ -266,3 +268,20 @@ def convert_base64_to_image(s: str) -> np.ndarray:
     else:
         raise RuntimeError('Wrong internal mask format.')
     return mask
+
+
+def filter_img(img: np.array, contour_area: int = 6000):
+    '''this applys morphological filtering to image, but at first it removes small unnecessary objects'''
+
+    thresh = (img > 0.5).astype(np.uint8)
+    cnts = cv2.findContours(thresh, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+    cnts = cnts[0] if len(cnts) == 2 else cnts[1]
+    for c in cnts:
+        area = cv2.contourArea(c)
+        if area < contour_area:
+            cv2.drawContours(thresh, [c], -1, (0, 0, 0), -1)
+
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+    opening = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel, iterations=2)
+    closing = cv2.morphologyEx(opening, cv2.MORPH_CLOSE, kernel)
+    return closing
