@@ -11,7 +11,7 @@ import segmentation_models_pytorch as smp
 import torchvision.transforms as transforms
 
 from tools.data_processing import log_dataset
-from tools.utils import EarlyStopping, split_lung_into_segments, find_obj_bbox, separate_lungs
+from tools.utils import EarlyStopping, filter_img, split_lung_into_segments, find_obj_bbox, separate_lungs
 
 
 class SegmentationModel:
@@ -653,46 +653,48 @@ class CovidScoringNet:
         if self.flag_type == 'no_crop':
             covid_img = torch.unsqueeze(self.preprocess_image_covid(source_img), dim=0).to(self.device)
 
-            lungs_predicted = self.lungs_segmentation(lung_img)[0, 0, :, :].cpu().detach().numpy()
-            covid_predicted = self.covid_segmentation(covid_img)
+            mask_lungs = self.lungs_segmentation(lung_img)[0, 0, :, :].cpu().detach().numpy()
+            mask_covid = self.covid_segmentation(covid_img)
 
-            if isinstance(covid_predicted, tuple):
-                covid_predicted, pred_cls = covid_predicted
+            if isinstance(mask_covid, tuple):
+                mask_covid, pred_cls = mask_covid
                 pred_cls = torch.round(pred_cls.view(-1))
-                covid_predicted = covid_predicted * pred_cls.view(-1, 1, 1, 1)
+                mask_covid = mask_covid * pred_cls.view(-1, 1, 1, 1)
 
-            covid_predicted = covid_predicted[0, 0, :, :].cpu().detach().numpy()
-            lungs_predicted = cv2.resize(lungs_predicted, (512, 512))
-            covid_predicted = cv2.resize(covid_predicted, (512, 512))
-            return lungs_predicted, covid_predicted
+            mask_covid = mask_covid[0, 0, :, :].cpu().detach().numpy()
+            mask_lungs = cv2.resize(mask_lungs, (512, 512))
+            mask_covid = cv2.resize(mask_covid, (512, 512))
+            return mask_lungs, mask_covid
 
         if self.flag_type == 'crop':
-            lungs_predicted = self.lungs_segmentation(lung_img).permute(0, 2, 3, 1).cpu().detach().numpy()[0, :, :, :] > 0.5
-            crop_lungs = source_img * lungs_predicted
+            mask_lungs = self.lungs_segmentation(lung_img).permute(0, 2, 3, 1).cpu().detach().numpy()[0, :, :, :] > 0.5
+            crop_lungs = source_img * mask_lungs
 
             processed_cropped_lung_mask = torch.unsqueeze(self.preprocess_image_covid(crop_lungs), dim=0).to(self.device)
-            covid_predicted = self.covid_segmentation(processed_cropped_lung_mask)
+            mask_covid = self.covid_segmentation(processed_cropped_lung_mask)
 
-            if isinstance(covid_predicted, tuple):
-                covid_predicted, pred_cls = covid_predicted
+            if isinstance(mask_covid, tuple):
+                mask_covid, pred_cls = mask_covid
                 pred_cls = torch.round(pred_cls.view(-1))
-                covid_predicted = covid_predicted * pred_cls.view(-1, 1, 1, 1)
+                mask_covid = mask_covid * pred_cls.view(-1, 1, 1, 1)
 
-            covid_predicted = cv2.resize(covid_predicted.cpu().detach().numpy()[0, 0, :, :], (512, 512))
-            lungs_predicted = cv2.resize(lungs_predicted[:, :, 0].astype(np.uint8), (512, 512))
-            return lungs_predicted, covid_predicted
+            mask_covid = cv2.resize(mask_covid.cpu().detach().numpy()[0, 0, :, :], (512, 512))
+            mask_lungs = cv2.resize(mask_lungs[:, :, 0].astype(np.uint8), (512, 512))
+            return mask_lungs, mask_covid
 
         if self.flag_type == 'single_crop':
-            lungs_predicted = self.lungs_segmentation(lung_img).permute(0, 2, 3, 1).cpu().detach().numpy()[0, :, :, :] > 0.5
-            crop_lungs = source_img * lungs_predicted
+            mask_lungs = self.lungs_segmentation(lung_img).permute(0, 2, 3, 1).cpu().detach().numpy()[0, :, :, :] > 0.5
+            mask_lungs = filter_img(mask_lungs)
+            mask_lungs = np.expand_dims(mask_lungs, 2)
 
-            bbox_coordinates = find_obj_bbox(lungs_predicted)
+            crop_lungs = source_img * mask_lungs
+            bbox_coordinates = find_obj_bbox(mask_lungs)
             bbox_min_x = np.min([x[0] for x in bbox_coordinates])
             bbox_min_y = np.min([x[1] for x in bbox_coordinates])
             bbox_max_x = np.max([x[2] for x in bbox_coordinates])
             bbox_max_y = np.max([x[3] for x in bbox_coordinates])
 
-            single_cropped_lungs_predicted = lungs_predicted[bbox_min_y:bbox_max_y, bbox_min_x:bbox_max_x]
+            single_cropped_lungs_predicted = mask_lungs[bbox_min_y:bbox_max_y, bbox_min_x:bbox_max_x]
             single_cropped_lung_mask = crop_lungs[bbox_min_y:bbox_max_y, bbox_min_x:bbox_max_x]
 
             processed_single_cropped_lung_mask = torch.unsqueeze(self.preprocess_image_covid(single_cropped_lung_mask), dim=0)
@@ -704,26 +706,26 @@ class CovidScoringNet:
                 pred_cls = torch.round(pred_cls.view(-1))
                 single_cropped_covid_mask = single_cropped_covid_mask * pred_cls.view(-1, 1, 1, 1)
 
-            covid_predicted = single_cropped_covid_mask.permute(0, 2, 3, 1).cpu().detach().numpy()[0, :, :, 0]
-            covid_predicted = cv2.resize(covid_predicted, (512, 512))
-            lungs_predicted = cv2.resize(single_cropped_lungs_predicted.astype(np.uint8), (512, 512))
-            return lungs_predicted, covid_predicted
+            mask_covid = single_cropped_covid_mask.permute(0, 2, 3, 1).cpu().detach().numpy()[0, :, :, 0]
+            mask_covid = cv2.resize(mask_covid, (512, 512))
+            mask_lungs = cv2.resize(single_cropped_lungs_predicted.astype(np.uint8), (512, 512))
+            return mask_lungs, mask_covid
 
     def predict(self, source_img):
         assert source_img.shape[2] == 3, 'Incorrect image dimensions'
 
-        lungs_predicted, covid_predicted = self.predict_masks(source_img)
-        lungs_predicted = (lungs_predicted > 0.5).astype(np.uint8)
-        covid_predicted = (covid_predicted > 0.5).astype(np.uint8)
+        pred_mask_lungs, pred_mask_covid = self.predict_masks(source_img)
+        mask_lungs = (pred_mask_lungs > 0.5).astype(np.uint8)
+        mask_covid = (pred_mask_covid > 0.5).astype(np.uint8)
 
-        left_lung, right_lung = separate_lungs(lungs_predicted)
+        left_lung, right_lung = separate_lungs(mask_lungs)
         left_lung_1, left_lung_2, left_lung_3 = split_lung_into_segments(left_lung)
         right_lung_1, right_lung_2, right_lung_3 = split_lung_into_segments(right_lung)
 
         lung_parts = np.stack([left_lung_1, left_lung_2, left_lung_3, right_lung_1, right_lung_2, right_lung_3], axis=0)
-        covid_intersection_lung_parts = covid_predicted * lung_parts
+        covid_intersection_lung_parts = mask_covid * lung_parts
 
         sum_of_lung_parts_areas = np.sum(lung_parts, axis=(1, 2))
         sum_of_covid_intersected_ares = np.sum(covid_intersection_lung_parts, axis=(1, 2))
         calculated_score = np.sum(sum_of_covid_intersected_ares / sum_of_lung_parts_areas > self.threshold)
-        return calculated_score, lungs_predicted, covid_predicted
+        return calculated_score, pred_mask_lungs, pred_mask_covid

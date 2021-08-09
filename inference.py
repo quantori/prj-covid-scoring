@@ -1,4 +1,8 @@
 import argparse
+import os
+
+import cv2
+
 import segmentation_models_pytorch as smp
 
 import pandas as pd
@@ -8,21 +12,23 @@ from tqdm import tqdm
 from tools.supervisely_tools import read_supervisely_project
 from tools.models import CovidScoringNet, SegmentationModel
 from tools.datasets import InferenceDataset
-from tools.utils import build_sms_model_from_path, mask_2_base64
+from tools.utils import build_smp_model_from_path
 
 
-def inference(model, inference_dataset, output_csv_filename):
+def inference(model, inference_dataset, output_csv_filename, output_mask_lungs, output_mask_covid):
     model.eval()
-    csv_file = {'filename': [], 'score': [], 'lungs_predicted': [], 'covid_predicted': []}
-    for source_img, img_filename in tqdm(inference_dataset):
-        predicted_score, lungs_predicted, covid_predicted = model.predict(source_img)
-        lungs_predicted_converted = mask_2_base64(lungs_predicted * 255)
-        covid_predicted_converted = mask_2_base64(covid_predicted * 255)
+    csv_file = {'filename': [], 'score': [], 'path_mask_lungs': [], 'path_mask_covid': []}
+    for source_img, img_path in tqdm(inference_dataset):
+        imagename = os.path.split(img_path)[-1]
+        predicted_score, mask_lungs, mask_covid = model.predict(source_img)
 
-        csv_file['filename'].append(img_filename)
+        cv2.imwrite(os.path.join(output_mask_lungs, imagename), mask_lungs * 255)
+        cv2.imwrite(os.path.join(output_mask_covid, imagename), mask_covid * 255)
+
+        csv_file['filename'].append(img_path)
         csv_file['score'].append(predicted_score)
-        csv_file['lungs_predicted'].append(lungs_predicted_converted)
-        csv_file['covid_predicted'].append(covid_predicted_converted)
+        csv_file['path_mask_lungs'].append(os.path.join(output_mask_lungs, imagename))
+        csv_file['path_mask_covid'].append(os.path.join(output_mask_covid, imagename))
 
     df = pd.DataFrame(csv_file)
     df.to_csv(output_csv_filename, index=False)
@@ -33,6 +39,8 @@ if __name__ == '__main__':
     parser.add_argument('--data_dir',
                         type=str)
     parser.add_argument('--output_csv_filename', default='covidnet_scores.csv', type=str)
+    parser.add_argument('--output_mask_lungs', type=str)
+    parser.add_argument('--output_mask_covid', type=str)
 
     # model parameters:
     parser.add_argument('--covid_model_path', type=str)
@@ -63,8 +71,8 @@ if __name__ == '__main__':
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
     if args.automatic_parser:
-        covid_model = build_sms_model_from_path(args.covid_model_path)
-        lung_model = build_sms_model_from_path(args.lung_model_path)
+        covid_model = build_smp_model_from_path(args.covid_model_path)
+        lung_model = build_smp_model_from_path(args.lung_model_path)
 
         args.covid_model_name = covid_model['model_name']
         args.covid_encoder_name = covid_model['encoder_name']
@@ -123,4 +131,4 @@ if __name__ == '__main__':
     model = CovidScoringNet(lung_sg, covid_sg, device, args.threshold, args.covid_input_size,  args.lung_input_size,
                             covid_preprocessing_params, lung_preprocessing_params, flag_type='single_crop') #no_crop  crop  single_crop
 
-    inference(model, inference_dataset, args.output_csv_filename)
+    inference(model, inference_dataset, args.output_csv_filename, args.output_mask_lungs, args.output_mask_covid)
