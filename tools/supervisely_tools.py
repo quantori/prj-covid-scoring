@@ -91,7 +91,7 @@ def convert_ann_to_mask(ann_path: str,
                 # kernel_size = int(0.01 * min_dim) for small masks (size > 500x500)
                 if filter_mask:
                     min_dim = min(_mask.shape)
-                    kernel_size = int(0.01 * min_dim)
+                    kernel_size = int(max(0.01 * min_dim, 1))
                     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kernel_size, kernel_size))
                     _mask = cv2.morphologyEx(_mask, cv2.MORPH_OPEN, kernel, iterations=3)
 

@@ -1,3 +1,5 @@
+import json
+import os
 from typing import Dict
 import warnings
 
@@ -126,8 +128,11 @@ def separate_lungs(mask: np.array):
 
     if num_labels != 3:
         warnings.warn('There aren\'t 2 objects on predicted mask, this might cause incorrect results')
-        stats = np.append(stats, [stats[-1]], axis=0)
-        centroids = np.append(centroids, [centroids[-1]], axis=0)
+
+        while num_labels <= 2:
+            stats = np.append(stats, [stats[-1]], axis=0)
+            centroids = np.append(centroids, [centroids[-1]], axis=0)
+            num_labels += 1
 
     for i in range(1, 3):
         x0, y0 = stats[i, cv2.CC_STAT_LEFT], stats[i, cv2.CC_STAT_TOP]
@@ -175,7 +180,7 @@ def find_obj_bbox(mask: np.array):
     return bbox_coordinates
 
 
-def build_smp_model_from_path(model_path):
+def build_smp_model_from_path(model_path: str):
     models = ['Unet', 'Unet++', 'DeepLabV3', 'DeepLabV3+', 'FPN', 'Linknet', 'PSPNet', 'PAN']
 
     encoders = ['resnet18', 'resnet34', 'resnet50', 'resnet101', 'resnet152', "resnext50_32x4d", "resnext101_32x4d",
@@ -247,7 +252,7 @@ def build_smp_model_from_path(model_path):
     return built_model
 
 
-def mask_2_base64(mask):
+def mask_2_base64(mask: np.array):
     img_pil = Image.fromarray(np.array(mask, dtype=np.uint8))
     img_pil.putpalette([0, 0, 0, 255, 255, 255])
     bytes_io = io.BytesIO()
@@ -285,3 +290,46 @@ def filter_img(img: np.array, contour_area: int = 6000):
     opening = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel, iterations=2)
     closing = cv2.morphologyEx(opening, cv2.MORPH_CLOSE, kernel)
     return closing
+
+
+def read_inference_images(inference_dataset: str):
+    all_img_paths = []
+
+    for dataset in os.listdir(inference_dataset):
+        full_dataset_folder = os.path.join(inference_dataset, dataset)
+        if not os.path.isdir(full_dataset_folder):
+            continue
+        imgs_dir = os.path.join(full_dataset_folder, 'img')
+        full_img_paths = [os.path.join(imgs_dir, img_filename) for img_filename in os.listdir(imgs_dir)]
+        all_img_paths += full_img_paths
+    return all_img_paths
+
+
+def find_filenames(search_pattern: str, path: str):
+    for root, dirs, files in os.walk(path):
+        for filename in files:
+            if search_pattern in filename:
+                return os.path.join(root, filename)
+
+
+def extract_ann_score(filename: str, dataset_name: str, scoring_ds_with_values_path: str):
+    extracted_scores = {'Inaccurate labelling': None, 'Score R': None, 'Score D': None, 'Poor quality D': None,
+                        'Poor quality R': None, 'ann_found': True}
+
+    if dataset_name in ['chest_xray_normal', 'rsna_normal']:
+        extracted_scores['Score R'] = 0
+        extracted_scores['Score D'] = 0
+    else:
+        base_filename, ext = os.path.splitext(filename)
+        found_ann = find_filenames(base_filename, scoring_ds_with_values_path)
+        if found_ann is None:
+            extracted_scores['ann_found'] = False
+            return extracted_scores
+
+        with open(found_ann) as f:
+            data = json.load(f)
+        for tag in data['tags']:
+            name = tag['name']
+            value = tag['value']
+            extracted_scores[name] = value
+    return extracted_scores

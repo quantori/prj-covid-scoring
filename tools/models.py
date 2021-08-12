@@ -684,11 +684,15 @@ class CovidScoringNet:
 
         if self.flag_type == 'single_crop':
             mask_lungs = self.lungs_segmentation(lung_img).permute(0, 2, 3, 1).cpu().detach().numpy()[0, :, :, :] > 0.5
-            mask_lungs = filter_img(mask_lungs)
+            mask_lungs = filter_img(mask_lungs, contour_area=6000)
             mask_lungs = np.expand_dims(mask_lungs, 2)
 
             crop_lungs = source_img * mask_lungs
             bbox_coordinates = find_obj_bbox(mask_lungs)
+            if len(bbox_coordinates) == 0:
+                height, width, _ = crop_lungs.shape
+                bbox_coordinates = np.array([[0, 0, width - 1, height - 1]])
+
             bbox_min_x = np.min([x[0] for x in bbox_coordinates])
             bbox_min_y = np.min([x[1] for x in bbox_coordinates])
             bbox_max_x = np.max([x[2] for x in bbox_coordinates])

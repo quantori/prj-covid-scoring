@@ -9,36 +9,39 @@ import pandas as pd
 import torch
 from tqdm import tqdm
 
-from tools.supervisely_tools import read_supervisely_project
 from tools.models import CovidScoringNet, SegmentationModel
 from tools.datasets import InferenceDataset
-from tools.utils import build_smp_model_from_path
+from tools.utils import build_smp_model_from_path, read_inference_images
 
 
 def inference(model, inference_dataset, output_csv_filename, output_mask_lungs, output_mask_covid):
     model.eval()
-    csv_file = {'filename': [], 'score': [], 'path_mask_lungs': [], 'path_mask_covid': []}
+    csv_file = {'dataset': [], 'filenames': [], 'score': [], 'path_mask_lungs': [], 'path_mask_covid': []}
     for source_img, img_path in tqdm(inference_dataset):
-        imagename = os.path.split(img_path)[-1]
+        image_path = os.path.normpath(img_path)
+
+        filename = os.path.split(image_path)[-1]
+        dataset_name = image_path.split(os.sep)[-3]
+
         predicted_score, mask_lungs, mask_covid = model.predict(source_img)
+        cv2.imwrite(os.path.join(output_mask_lungs, filename), mask_lungs * 255)
+        cv2.imwrite(os.path.join(output_mask_covid, filename), mask_covid * 255)
 
-        cv2.imwrite(os.path.join(output_mask_lungs, imagename), mask_lungs * 255)
-        cv2.imwrite(os.path.join(output_mask_covid, imagename), mask_covid * 255)
-
-        csv_file['filename'].append(img_path)
+        csv_file['dataset'].append(dataset_name)
+        csv_file['filenames'].append(filename)
         csv_file['score'].append(predicted_score)
-        csv_file['path_mask_lungs'].append(os.path.join(output_mask_lungs, imagename))
-        csv_file['path_mask_covid'].append(os.path.join(output_mask_covid, imagename))
+        csv_file['path_mask_lungs'].append(os.path.join(output_mask_lungs, filename))
+        csv_file['path_mask_covid'].append(os.path.join(output_mask_covid, filename))
 
     df = pd.DataFrame(csv_file)
     df.to_csv(output_csv_filename, index=False)
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Segmentation pipeline')
+    parser = argparse.ArgumentParser(description='Inference pipeline')
     parser.add_argument('--data_dir',
                         type=str)
-    parser.add_argument('--output_csv_filename', default='covidnet_scores.csv', type=str)
+    parser.add_argument('--output_csv_filename', default='covidnet_scores_ours.csv', type=str)
     parser.add_argument('--output_mask_lungs', type=str)
     parser.add_argument('--output_mask_covid', type=str)
 
@@ -50,9 +53,9 @@ if __name__ == '__main__':
     parser.add_argument('--covid_in_channels', default=3, type=int)
     parser.add_argument('--covid_num_classes', default=1, type=int)
     parser.add_argument('--covid_activation', default='sigmoid', type=str)
-    parser.add_argument('--covid_dropout', default=0.5, type=float)
+    parser.add_argument('--covid_dropout', default=0.2, type=float)
     parser.add_argument('--covid_aux_params', default=True, type=bool)
-    parser.add_argument('--covid_input_size', default=(512, 512), type=int)
+    parser.add_argument('--covid_input_size', default=(480, 480), type=int)
 
     parser.add_argument('--lung_model_path', type=str)
     parser.add_argument('--lung_model_name', default='Unet', type=str)
@@ -61,9 +64,9 @@ if __name__ == '__main__':
     parser.add_argument('--lung_in_channels', default=3, type=int)
     parser.add_argument('--lung_num_classes', default=1, type=int)
     parser.add_argument('--lung_activation', default='sigmoid', type=str)
-    parser.add_argument('--lung_dropout', default=0.5, type=float)
+    parser.add_argument('--lung_dropout', default=0.2, type=float)
     parser.add_argument('--lung_aux_params', default=False, type=bool)
-    parser.add_argument('--lung_input_size', default=(512, 512), type=int)
+    parser.add_argument('--lung_input_size', default=(544, 544), type=int)
 
     parser.add_argument('--automatic_parser', default=True, type=bool)
     parser.add_argument('--threshold', default=0.5, type=float)
@@ -125,10 +128,10 @@ if __name__ == '__main__':
     lung_preprocessing_params = smp.encoders.get_preprocessing_params(encoder_name=args.lung_encoder_name,
                                                                       pretrained=args.lung_encoder_weights)
 
-    img_paths, ann_paths, dataset_names = read_supervisely_project(args.data_dir)
+    img_paths = read_inference_images(args.data_dir)
     inference_dataset = InferenceDataset(img_paths, input_size=args.lung_input_size)
 
-    model = CovidScoringNet(lung_sg, covid_sg, device, args.threshold, args.covid_input_size,  args.lung_input_size,
+    model = CovidScoringNet(lung_sg, covid_sg, device, args.threshold, args.lung_input_size, args.covid_input_size,
                             covid_preprocessing_params, lung_preprocessing_params, flag_type='single_crop') #no_crop  crop  single_crop
 
     inference(model, inference_dataset, args.output_csv_filename, args.output_mask_lungs, args.output_mask_covid)
