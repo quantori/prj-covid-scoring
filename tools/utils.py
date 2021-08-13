@@ -1,3 +1,4 @@
+import math
 from typing import Dict
 import warnings
 
@@ -5,6 +6,7 @@ import base64
 import cv2
 import io
 import numpy as np
+import pandas as pd
 from PIL import Image
 import zlib
 
@@ -120,7 +122,8 @@ def separate_lungs(mask: np.array):
     assert np.max(mask) <= 1 and np.min(mask) >= 0, 'mask values should be in [0,1] scale, max {}' \
                                                     ' min {}'.format(np.max(mask), np.min(mask))
     binary_map = (mask > 0.5).astype(np.uint8)
-    num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(binary_map, connectivity=8, ltype=cv2.CV_32S)
+    num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(binary_map, connectivity=8,
+                                                                            ltype=cv2.CV_32S)
     centroids = centroids.astype(np.int32)
     lungs = []
 
@@ -163,7 +166,7 @@ def split_lung_into_segments(lung: np.array):
 
 def find_obj_bbox(mask: np.array):
     assert np.max(mask) <= 1 and np.min(mask) >= 0, 'mask values should be in [0,1] scale, max {}' \
-                                                    ' min {}'.format(np.max(mask),  np.min(mask))
+                                                    ' min {}'.format(np.max(mask), np.min(mask))
     binary_map = (mask > 0.5).astype(np.uint8)
     num_labels, _, stats, _ = cv2.connectedComponentsWithStats(binary_map, connectivity=8, ltype=cv2.CV_32S)
     bbox_coordinates = []
@@ -226,7 +229,8 @@ def build_smp_model_from_path(model_path):
     for encoder in encoders:
         if '*' + encoder + '_' in model_path:
             if flag:
-                warnings.warn('The occurred error is related to the model building (encoders). This may cause problems!')
+                warnings.warn(
+                    'The occurred error is related to the model building (encoders). This may cause problems!')
             flag = True
             built_model['encoder_name'] = encoder
 
@@ -285,3 +289,25 @@ def filter_img(img: np.array, contour_area: int = 6000):
     opening = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel, iterations=2)
     closing = cv2.morphologyEx(opening, cv2.MORPH_CLOSE, kernel)
     return closing
+
+
+def add_consensus_score(x):
+    score_r = x['Score R']
+    score_d = x['Score D']
+
+    if pd.isna(score_r):
+        score_r = score_d
+
+    if pd.isna(score_d):
+        score_d = score_r
+
+    x['consensus_score'] = (score_r + score_d) / 2
+    x['consensus_score_rounded'] = math.ceil((score_r + score_d) / 2)
+
+    return x
+
+
+def prepare_metadata(gt_metadata: pd.DataFrame):
+    gt_metadata = gt_metadata.loc[gt_metadata['ann_found'] == True]
+    gt_metadata = gt_metadata.apply(add_consensus_score, axis=1)
+    return gt_metadata

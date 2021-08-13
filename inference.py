@@ -38,7 +38,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Segmentation pipeline')
     parser.add_argument('--data_dir',
                         type=str)
-    parser.add_argument('--output_csv_filename', default='covidnet_scores.csv', type=str)
+    parser.add_argument('--output_csv_filename', default='covidnet_scores_ours.csv', type=str)
     parser.add_argument('--output_mask_lungs', type=str)
     parser.add_argument('--output_mask_covid', type=str)
 
