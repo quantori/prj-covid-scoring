@@ -8,6 +8,8 @@ import numpy as np
 from PIL import Image
 import zlib
 
+from sklearn.metrics import mean_squared_error
+
 
 class EarlyStopping:
     def __init__(self,
@@ -120,7 +122,8 @@ def separate_lungs(mask: np.array):
     assert np.max(mask) <= 1 and np.min(mask) >= 0, 'mask values should be in [0,1] scale, max {}' \
                                                     ' min {}'.format(np.max(mask), np.min(mask))
     binary_map = (mask > 0.5).astype(np.uint8)
-    num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(binary_map, connectivity=8, ltype=cv2.CV_32S)
+    num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(binary_map, connectivity=8,
+                                                                            ltype=cv2.CV_32S)
     centroids = centroids.astype(np.int32)
     lungs = []
 
@@ -163,7 +166,7 @@ def split_lung_into_segments(lung: np.array):
 
 def find_obj_bbox(mask: np.array):
     assert np.max(mask) <= 1 and np.min(mask) >= 0, 'mask values should be in [0,1] scale, max {}' \
-                                                    ' min {}'.format(np.max(mask),  np.min(mask))
+                                                    ' min {}'.format(np.max(mask), np.min(mask))
     binary_map = (mask > 0.5).astype(np.uint8)
     num_labels, _, stats, _ = cv2.connectedComponentsWithStats(binary_map, connectivity=8, ltype=cv2.CV_32S)
     bbox_coordinates = []
@@ -226,7 +229,8 @@ def build_smp_model_from_path(model_path):
     for encoder in encoders:
         if '*' + encoder + '_' in model_path:
             if flag:
-                warnings.warn('The occurred error is related to the model building (encoders). This may cause problems!')
+                warnings.warn(
+                    'The occurred error is related to the model building (encoders). This may cause problems!')
             flag = True
             built_model['encoder_name'] = encoder
 
@@ -285,3 +289,17 @@ def filter_img(img: np.array, contour_area: int = 6000):
     opening = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel, iterations=2)
     closing = cv2.morphologyEx(opening, cv2.MORPH_CLOSE, kernel)
     return closing
+
+
+def rmse_parameters(squared: bool):
+    def rmse_parameters_(y_true, y_pred):
+        return mean_squared_error(y_true, y_pred, squared=squared)
+
+    return rmse_parameters_
+
+
+def measure_metrics(names_metrics_fn: Dict, y_pred, y_true):
+    calculated_metrics = {name: None for name in names_metrics_fn.keys()}
+    for metrics_name, metrics_fn in names_metrics_fn.items():
+        calculated_metrics[metrics_name] = metrics_fn(y_true, y_pred)
+    return calculated_metrics
