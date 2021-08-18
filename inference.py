@@ -46,7 +46,7 @@ if __name__ == '__main__':
     parser.add_argument('--output_dir', type=str)
     parser.add_argument('--csv_name', default='Scores.csv', type=str)
 
-    # model parameters:
+    # COVID model settings
     parser.add_argument('--covid_model_path', type=str)
     parser.add_argument('--covid_model_name', default='Unet', type=str)
     parser.add_argument('--covid_encoder_name', default='se_resnet101', type=str)
@@ -57,7 +57,8 @@ if __name__ == '__main__':
     parser.add_argument('--covid_dropout', default=0.2, type=float)
     parser.add_argument('--covid_aux_params', default=True, type=bool)
     parser.add_argument('--covid_input_size', default=(480, 480), type=int)
-
+    
+    # Lungs model settings
     parser.add_argument('--lungs_model_path', type=str)
     parser.add_argument('--lungs_model_name', default='Unet', type=str)
     parser.add_argument('--lungs_encoder_name', default='se_resnext101_32x4d', type=str)

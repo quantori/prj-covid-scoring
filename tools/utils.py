@@ -1,5 +1,6 @@
 import os
 import json
+import math
 import warnings
 from typing import Dict, List
 
@@ -8,6 +9,7 @@ import cv2
 import zlib
 import base64
 import numpy as np
+import pandas as pd
 from PIL import Image
 
 
@@ -122,7 +124,8 @@ def separate_lungs(mask: np.array):
     assert np.max(mask) <= 1 and np.min(mask) >= 0, 'mask values should be in [0,1] scale, max {}' \
                                                     ' min {}'.format(np.max(mask), np.min(mask))
     binary_map = (mask > 0.5).astype(np.uint8)
-    num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(binary_map, connectivity=8, ltype=cv2.CV_32S)
+    num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(binary_map, connectivity=8,
+                                                                            ltype=cv2.CV_32S)
     centroids = centroids.astype(np.int32)
     lungs = []
 
@@ -168,7 +171,7 @@ def split_lung_into_segments(lung: np.array):
 
 def find_obj_bbox(mask: np.array):
     assert np.max(mask) <= 1 and np.min(mask) >= 0, 'mask values should be in [0,1] scale, max {}' \
-                                                    ' min {}'.format(np.max(mask),  np.min(mask))
+                                                    ' min {}'.format(np.max(mask), np.min(mask))
     binary_map = (mask > 0.5).astype(np.uint8)
     num_labels, _, stats, _ = cv2.connectedComponentsWithStats(binary_map, connectivity=8, ltype=cv2.CV_32S)
     bbox_coordinates = []
@@ -258,7 +261,6 @@ def base64_to_image(s: str) -> np.ndarray:
 
 
 def filter_img(img: np.array, contour_area: int = 5000) -> np.ndarray:
-    """This function applies morphological filtering to image and removes small unnecessary objects"""
 
     thresh = (img > 0.5).astype(np.uint8)
     cnts = cv2.findContours(thresh, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
@@ -272,6 +274,22 @@ def filter_img(img: np.array, contour_area: int = 5000) -> np.ndarray:
     opening = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel, iterations=2)
     closing = cv2.morphologyEx(opening, cv2.MORPH_CLOSE, kernel)
     return closing
+
+
+def compute_consensus_score(row):
+    score_r = row['Score R']
+    score_d = row['Score D']
+    score_r = score_d if pd.isna(score_r) else False
+    score_d = score_r if pd.isna(score_d) else False
+    row['Score C'] = (score_r + score_d) / 2
+    row['Score C rnd'] = math.ceil((score_r + score_d) / 2)
+    return row
+
+
+def process_gt_metadata(df: pd.DataFrame) -> pd.DataFrame:
+    df = df[df['ann_found'] == True]
+    df = df.apply(compute_consensus_score, axis=1)
+    return df
 
 
 def read_inference_images(inference_dataset: str) -> List[str]:
