@@ -8,7 +8,7 @@ from PIL import Image
 from torch.utils.data import Dataset
 import torchvision.transforms as transforms
 
-from tools.utils import find_obj_bbox
+from tools.utils import filter_img, find_obj_bbox
 from tools.supervisely_tools import convert_ann_to_mask
 
 
@@ -138,6 +138,8 @@ class LungsCropper(Dataset):
             with torch.no_grad():
                 lungs_prediction = self.lungs_segmentation_model(torch.unsqueeze(transformed_image, 0))
                 predicted_mask = lungs_prediction.permute(0, 2, 3, 1).cpu().detach().numpy()[0, :, :, :] > 0.5
+            predicted_mask = filter_img(predicted_mask, contour_area=5000)
+            predicted_mask = np.expand_dims(predicted_mask, 2)
 
             mask_intersection = mask * predicted_mask[:, :, 0]
             image_intersection = image * predicted_mask
@@ -229,10 +231,7 @@ if __name__ == '__main__':
         img, mask, label = dataset[idx]
 
     # Example of usage of LungsCropper
-    try:
-        from . import segmentation_models_pytorch as smp    # (change to single import later)
-    except:
-        import segmentation_models_pytorch as smp
+    import segmentation_models_pytorch as smp
     weights_path = 'models_lungs/PAN_se_resnet50_imagenet_210621_0826/best_weights.pth'
 
     model = smp.PAN(encoder_name='se_resnet50',
