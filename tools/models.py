@@ -223,7 +223,7 @@ class SegmentationModel:
             print('\033[91m' + '❌ GPU: ({:s})'.format(gpu_s) + '\033[0m')
         return device
 
-    def get_model(self) -> Any:
+    def build_model(self) -> Any:
         if self.model_name == 'Unet':
             model = smp.Unet(encoder_name=self.encoder_name,
                              encoder_weights=self.encoder_weights,
@@ -376,7 +376,7 @@ class SegmentationModel:
         self.print_model_settings()
         os.makedirs(self.model_dir) if not os.path.exists(self.model_dir) else False
 
-        model = self.get_model()
+        model = self.build_model()
         # Used for viewing the model architecture. It doesn't work for all solutions
         # torch.onnx.export(model,
         #                   torch.randn(self.batch_size, self.in_channels, self.input_size[0], self.input_size[1], requires_grad=True),
@@ -529,7 +529,7 @@ class TuningModel(SegmentationModel):
               logging_loader: torch.utils.data.dataloader.DataLoader = None) -> None:
 
         self.print_model_settings()
-        model = self.get_model()
+        model = self.build_model()
         optimizer = self.build_optimizer(model=model, optimizer=self.optimizer, lr=self.lr)
         loss_seg, loss_cls = self.build_loss(loss_seg=self.loss_seg, loss_cls=self.loss_cls)
         es_callback = EarlyStopping(monitor_metric=self.monitor_metric,
@@ -684,11 +684,15 @@ class CovidScoringNet:
 
         if self.flag_type == 'single_crop':
             mask_lungs = self.lungs_segmentation(lung_img).permute(0, 2, 3, 1).cpu().detach().numpy()[0, :, :, :] > 0.5
-            mask_lungs = filter_img(mask_lungs)
+            mask_lungs = filter_img(mask_lungs, contour_area=6000)
             mask_lungs = np.expand_dims(mask_lungs, 2)
 
             crop_lungs = source_img * mask_lungs
             bbox_coordinates = find_obj_bbox(mask_lungs)
+            if len(bbox_coordinates) == 0:
+                height, width, _ = crop_lungs.shape
+                bbox_coordinates = np.array([[0, 0, width - 1, height - 1]])
+
             bbox_min_x = np.min([x[0] for x in bbox_coordinates])
             bbox_min_y = np.min([x[1] for x in bbox_coordinates])
             bbox_max_x = np.max([x[2] for x in bbox_coordinates])

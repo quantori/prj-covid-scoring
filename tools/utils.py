@@ -1,13 +1,16 @@
-from typing import Dict
+import os
+import json
+import math
 import warnings
+from typing import Dict, List
 
-import base64
-import cv2
 import io
+import cv2
+import zlib
+import base64
 import numpy as np
 import pandas as pd
 from PIL import Image
-import zlib
 
 from sklearn.metrics import mean_squared_error
 
@@ -130,8 +133,11 @@ def separate_lungs(mask: np.array):
 
     if num_labels != 3:
         warnings.warn('There aren\'t 2 objects on predicted mask, this might cause incorrect results')
-        stats = np.append(stats, [stats[-1]], axis=0)
-        centroids = np.append(centroids, [centroids[-1]], axis=0)
+
+        while num_labels <= 2:
+            stats = np.append(stats, [stats[-1]], axis=0)
+            centroids = np.append(centroids, [centroids[-1]], axis=0)
+            num_labels += 1
 
     for i in range(1, 3):
         x0, y0 = stats[i, cv2.CC_STAT_LEFT], stats[i, cv2.CC_STAT_TOP]
@@ -179,7 +185,7 @@ def find_obj_bbox(mask: np.array):
     return bbox_coordinates
 
 
-def build_smp_model_from_path(model_path):
+def extract_model_opts(model_path: str):
     models = ['Unet', 'Unet++', 'DeepLabV3', 'DeepLabV3+', 'FPN', 'Linknet', 'PSPNet', 'PAN']
 
     encoders = ['resnet18', 'resnet34', 'resnet50', 'resnet101', 'resnet152', "resnext50_32x4d", "resnext101_32x4d",
@@ -213,46 +219,27 @@ def build_smp_model_from_path(model_path):
 
     weights = ['imagenet', 'ssl', 'swsl', 'instagram', 'imagenet+background', 'noisy-student', 'advprop', 'imagenet+5k']
     built_model = {'model_name': None, 'encoder_name': None, 'encoder_weights': None}
-    flag = False
     for model in models:
         if model + '_' in model_path:
-            if flag:
-                warnings.warn('The occurred error is related to the model building (models). This may cause problems!')
-            flag = True
             built_model['model_name'] = model
-
-    if not flag:
-        warnings.warn('Automatic parser didn\'t find model_name')
+            break
 
     model_path = model_path.replace(built_model['model_name'] + '_', '*')
 
-    flag = False
     for encoder in encoders:
         if '*' + encoder + '_' in model_path:
-            if flag:
-                warnings.warn(
-                    'The occurred error is related to the model building (encoders). This may cause problems!')
-            flag = True
             built_model['encoder_name'] = encoder
+            break
 
-    if not flag:
-        warnings.warn('Automatic parser didn\'t find encoder_name')
-
-    flag = False
     for weight in weights:
         if '_' + weight + '_' in model_path:
-            if flag:
-                warnings.warn('The occurred error is related to the model building (weights). This may cause problems!')
-            flag = True
             built_model['encoder_weights'] = weight
-
-    if not flag:
-        warnings.warn('Automatic parser didn\'t find encoder_weights')
+            break
 
     return built_model
 
 
-def mask_2_base64(mask):
+def mask_2_base64(mask: np.array):
     img_pil = Image.fromarray(np.array(mask, dtype=np.uint8))
     img_pil.putpalette([0, 0, 0, 255, 255, 255])
     bytes_io = io.BytesIO()
@@ -275,8 +262,7 @@ def base64_to_image(s: str) -> np.ndarray:
     return mask
 
 
-def filter_img(img: np.array, contour_area: int = 6000):
-    '''this applys morphological filtering to image, but at first it removes small unnecessary objects'''
+def filter_img(img: np.array, contour_area: int = 5000) -> np.ndarray:
 
     thresh = (img > 0.5).astype(np.uint8)
     cnts = cv2.findContours(thresh, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
@@ -303,3 +289,67 @@ def measure_metrics(metric_fns: Dict, y_pred: pd.Series, y_true: pd.Series) -> d
     for metric_name, metric_fn in metric_fns.items():
         metrics[metric_name] = metric_fn(y_true, y_pred)
     return metrics
+
+
+def compute_consensus_score(row):
+    score_r = row['Score R']
+    score_d = row['Score D']
+    score_r = score_d if pd.isna(score_r) else False
+    score_d = score_r if pd.isna(score_d) else False
+    row['Score C'] = (score_r + score_d) / 2
+    row['Score C rnd'] = math.ceil((score_r + score_d) / 2)
+    return row
+
+
+def process_gt_metadata(df: pd.DataFrame) -> pd.DataFrame:
+    df = df[df['ann_found'] == True]
+    df = df.apply(compute_consensus_score, axis=1)
+    return df
+
+
+def read_inference_images(inference_dataset: str) -> List[str]:
+    img_paths = []
+    for dataset in os.listdir(inference_dataset):
+        full_dataset_folder = os.path.join(inference_dataset, dataset)
+        if not os.path.isdir(full_dataset_folder):
+            continue
+        imgs_dir = os.path.join(full_dataset_folder, 'img')
+        full_img_paths = [os.path.join(imgs_dir, img_filename) for img_filename in os.listdir(imgs_dir)]
+        img_paths += full_img_paths
+    return img_paths
+
+
+def find_filenames(search_pattern: str, path: str):
+    for root, dirs, files in os.walk(path):
+        for filename in files:
+            if search_pattern in filename:
+                return os.path.join(root, filename)
+
+
+def extract_ann_score(filename: str, dataset_name: str, scoring_ds_with_values_path: str):
+    extracted_scores = {'Inaccurate labelling': None, 'Score R': None, 'Score D': None, 'Poor quality D': None,
+                        'Poor quality R': None, 'ann_found': True}
+
+    if dataset_name in ['chest_xray_normal', 'rsna_normal']:
+        extracted_scores['Score R'] = 0
+        extracted_scores['Score D'] = 0
+    else:
+        base_filename, ext = os.path.splitext(filename)
+        found_ann = find_filenames(base_filename, scoring_ds_with_values_path)
+        if found_ann is None:
+            extracted_scores['ann_found'] = False
+            return extracted_scores
+
+        with open(found_ann) as f:
+            data = json.load(f)
+        for tag in data['tags']:
+            name = tag['name']
+            value = tag['value']
+            extracted_scores[name] = value
+    return extracted_scores
+
+
+if __name__ == '__main__':
+
+    # Test reading inference images
+    image_paths = read_inference_images(inference_dataset='dataset/inference/test')
