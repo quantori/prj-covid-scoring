@@ -1,14 +1,14 @@
-import json
 import os
-from typing import Dict
+import json
 import warnings
+from typing import Dict, List
 
-import base64
-import cv2
 import io
+import cv2
+import zlib
+import base64
 import numpy as np
 from PIL import Image
-import zlib
 
 
 class EarlyStopping:
@@ -180,7 +180,7 @@ def find_obj_bbox(mask: np.array):
     return bbox_coordinates
 
 
-def build_smp_model_from_path(model_path: str):
+def extract_model_opts(model_path: str):
     models = ['Unet', 'Unet++', 'DeepLabV3', 'DeepLabV3+', 'FPN', 'Linknet', 'PSPNet', 'PAN']
 
     encoders = ['resnet18', 'resnet34', 'resnet50', 'resnet101', 'resnet152', "resnext50_32x4d", "resnext101_32x4d",
@@ -214,40 +214,22 @@ def build_smp_model_from_path(model_path: str):
 
     weights = ['imagenet', 'ssl', 'swsl', 'instagram', 'imagenet+background', 'noisy-student', 'advprop', 'imagenet+5k']
     built_model = {'model_name': None, 'encoder_name': None, 'encoder_weights': None}
-    flag = False
     for model in models:
         if model + '_' in model_path:
-            if flag:
-                warnings.warn('The occurred error is related to the model building (models). This may cause problems!')
-            flag = True
             built_model['model_name'] = model
-
-    if not flag:
-        warnings.warn('Automatic parser didn\'t find model_name')
+            break
 
     model_path = model_path.replace(built_model['model_name'] + '_', '*')
 
-    flag = False
     for encoder in encoders:
         if '*' + encoder + '_' in model_path:
-            if flag:
-                warnings.warn('The occurred error is related to the model building (encoders). This may cause problems!')
-            flag = True
             built_model['encoder_name'] = encoder
+            break
 
-    if not flag:
-        warnings.warn('Automatic parser didn\'t find encoder_name')
-
-    flag = False
     for weight in weights:
         if '_' + weight + '_' in model_path:
-            if flag:
-                warnings.warn('The occurred error is related to the model building (weights). This may cause problems!')
-            flag = True
             built_model['encoder_weights'] = weight
-
-    if not flag:
-        warnings.warn('Automatic parser didn\'t find encoder_weights')
+            break
 
     return built_model
 
@@ -292,17 +274,16 @@ def filter_img(img: np.array, contour_area: int = 6000):
     return closing
 
 
-def read_inference_images(inference_dataset: str):
-    all_img_paths = []
-
+def read_inference_images(inference_dataset: str) -> List[str]:
+    img_paths = []
     for dataset in os.listdir(inference_dataset):
         full_dataset_folder = os.path.join(inference_dataset, dataset)
         if not os.path.isdir(full_dataset_folder):
             continue
         imgs_dir = os.path.join(full_dataset_folder, 'img')
         full_img_paths = [os.path.join(imgs_dir, img_filename) for img_filename in os.listdir(imgs_dir)]
-        all_img_paths += full_img_paths
-    return all_img_paths
+        img_paths += full_img_paths
+    return img_paths
 
 
 def find_filenames(search_pattern: str, path: str):
@@ -333,3 +314,9 @@ def extract_ann_score(filename: str, dataset_name: str, scoring_ds_with_values_p
             value = tag['value']
             extracted_scores[name] = value
     return extracted_scores
+
+
+if __name__ == '__main__':
+
+    # Test reading inference images
+    image_paths = read_inference_images(inference_dataset='dataset/inference/test')
