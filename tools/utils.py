@@ -5,6 +5,7 @@ import base64
 import cv2
 import io
 import numpy as np
+import pandas as pd
 from PIL import Image
 import zlib
 
@@ -294,12 +295,11 @@ def filter_img(img: np.array, contour_area: int = 6000):
 def rmse_parameters(squared: bool):
     def rmse_parameters_(y_true, y_pred):
         return mean_squared_error(y_true, y_pred, squared=squared)
-
     return rmse_parameters_
 
 
-def measure_metrics(names_metrics_fn: Dict, y_pred, y_true):
-    calculated_metrics = {name: None for name in names_metrics_fn.keys()}
-    for metrics_name, metrics_fn in names_metrics_fn.items():
-        calculated_metrics[metrics_name] = metrics_fn(y_true, y_pred)
-    return calculated_metrics
+def measure_metrics(metric_fns: Dict, y_pred: pd.Series, y_true: pd.Series) -> dict:
+    metrics = {name: None for name in metric_fns.keys()}
+    for metric_name, metric_fn in metric_fns.items():
+        metrics[metric_name] = metric_fn(y_true, y_pred)
+    return metrics
