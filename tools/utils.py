@@ -291,9 +291,9 @@ def filter_img(img: np.array, contour_area: int = 6000):
     return closing
 
 
-def add_consensus_score(x):
-    score_r = x['Score R']
-    score_d = x['Score D']
+def compute_consensus_score(row):
+    score_r = row['Score R']
+    score_d = row['Score D']
 
     if pd.isna(score_r):
         score_r = score_d
@@ -301,13 +301,13 @@ def add_consensus_score(x):
     if pd.isna(score_d):
         score_d = score_r
 
-    x['consensus_score'] = (score_r + score_d) / 2
-    x['consensus_score_rounded'] = math.ceil((score_r + score_d) / 2)
+    row['Score C'] = (score_r + score_d) / 2
+    row['Score C rnd'] = math.ceil((score_r + score_d) / 2)
 
-    return x
+    return row
 
 
-def prepare_metadata(gt_metadata: pd.DataFrame):
-    gt_metadata = gt_metadata.loc[gt_metadata['ann_found'] == True]
-    gt_metadata = gt_metadata.apply(add_consensus_score, axis=1)
-    return gt_metadata
+def process_gt_metadata(df: pd.DataFrame) -> pd.DataFrame:
+    df = df[df['ann_found'] == True]
+    df = df.apply(compute_consensus_score, axis=1)
+    return df
