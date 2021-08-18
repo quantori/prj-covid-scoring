@@ -270,8 +270,8 @@ def base64_to_image(s: str) -> np.ndarray:
     return mask
 
 
-def filter_img(img: np.array, contour_area: int = 6000):
-    '''this applys morphological filtering to image, but at first it removes small unnecessary objects'''
+def filter_img(img: np.array, contour_area: int = 5000) -> np.ndarray:
+    """This function applies morphological filtering to image and removes small unnecessary objects"""
 
     thresh = (img > 0.5).astype(np.uint8)
     cnts = cv2.findContours(thresh, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
