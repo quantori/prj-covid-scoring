@@ -12,6 +12,8 @@ import numpy as np
 import pandas as pd
 from PIL import Image
 
+from sklearn.metrics import mean_squared_error
+
 
 class EarlyStopping:
     def __init__(self,
@@ -274,6 +276,19 @@ def filter_img(img: np.array, contour_area: int = 5000) -> np.ndarray:
     opening = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel, iterations=2)
     closing = cv2.morphologyEx(opening, cv2.MORPH_CLOSE, kernel)
     return closing
+
+
+def rmse_parameters(squared: bool):
+    def rmse_parameters_(y_true, y_pred):
+        return mean_squared_error(y_true, y_pred, squared=squared)
+    return rmse_parameters_
+
+
+def measure_metrics(metric_fns: Dict, y_pred: pd.Series, y_true: pd.Series) -> dict:
+    metrics = {name: None for name in metric_fns.keys()}
+    for metric_name, metric_fn in metric_fns.items():
+        metrics[metric_name] = metric_fn(y_true, y_pred)
+    return metrics
 
 
 def compute_consensus_score(row):
