@@ -231,10 +231,7 @@ if __name__ == '__main__':
         img, mask, label = dataset[idx]
 
     # Example of usage of LungsCropper
-    try:
-        from . import segmentation_models_pytorch as smp    # (change to single import later)
-    except:
-        import segmentation_models_pytorch as smp
+    import segmentation_models_pytorch as smp
     weights_path = 'models_lungs/PAN_se_resnet50_imagenet_210621_0826/best_weights.pth'
 
     model = smp.PAN(encoder_name='se_resnet50',
