@@ -223,7 +223,7 @@ class SegmentationModel:
             print('\033[91m' + '❌ GPU: ({:s})'.format(gpu_s) + '\033[0m')
         return device
 
-    def get_model(self) -> Any:
+    def build_model(self) -> Any:
         if self.model_name == 'Unet':
             model = smp.Unet(encoder_name=self.encoder_name,
                              encoder_weights=self.encoder_weights,
@@ -376,7 +376,7 @@ class SegmentationModel:
         self.print_model_settings()
         os.makedirs(self.model_dir) if not os.path.exists(self.model_dir) else False
 
-        model = self.get_model()
+        model = self.build_model()
         # Used for viewing the model architecture. It doesn't work for all solutions
         # torch.onnx.export(model,
         #                   torch.randn(self.batch_size, self.in_channels, self.input_size[0], self.input_size[1], requires_grad=True),
@@ -529,7 +529,7 @@ class TuningModel(SegmentationModel):
               logging_loader: torch.utils.data.dataloader.DataLoader = None) -> None:
 
         self.print_model_settings()
-        model = self.get_model()
+        model = self.build_model()
         optimizer = self.build_optimizer(model=model, optimizer=self.optimizer, lr=self.lr)
         loss_seg, loss_cls = self.build_loss(loss_seg=self.loss_seg, loss_cls=self.loss_cls)
         es_callback = EarlyStopping(monitor_metric=self.monitor_metric,
