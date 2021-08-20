@@ -18,7 +18,7 @@ def inference(model, inference_dataset, output_dir, csv_name):
     output_covid_dir = os.path.join(output_dir, 'covid')
     os.makedirs(output_lungs_dir) if not os.path.exists(output_lungs_dir) else False
     os.makedirs(output_covid_dir) if not os.path.exists(output_covid_dir) else False
-    csv_file = {'dataset': [], 'img_name': [], 'lungs_mask': [], 'covid_mask': [], 'score': []}
+    csv_file = {'dataset': [], 'filename': [], 'lungs_mask': [], 'covid_mask': [], 'score': []}
     for source_img, img_path in tqdm(inference_dataset, desc='Prediction', unit=' images'):
         image_path = os.path.normpath(img_path)
 
@@ -30,7 +30,7 @@ def inference(model, inference_dataset, output_dir, csv_name):
         cv2.imwrite(os.path.join(output_covid_dir, filename), mask_covid * 255)
 
         csv_file['dataset'].append(dataset_name)
-        csv_file['img_name'].append(filename)
+        csv_file['filename'].append(filename)
         csv_file['lungs_mask'].append(os.path.join(output_lungs_dir, filename))
         csv_file['covid_mask'].append(os.path.join(output_covid_dir, filename))
         csv_file['score'].append(predicted_score)

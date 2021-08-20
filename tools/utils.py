@@ -2,7 +2,7 @@ import os
 import json
 import math
 import warnings
-from typing import Dict, List
+from typing import Dict, List, Callable
 
 import io
 import cv2
@@ -263,7 +263,6 @@ def base64_to_image(s: str) -> np.ndarray:
 
 
 def filter_img(img: np.array, contour_area: int = 5000) -> np.ndarray:
-
     thresh = (img > 0.5).astype(np.uint8)
     cnts = cv2.findContours(thresh, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
     cnts = cnts[0] if len(cnts) == 2 else cnts[1]
@@ -281,6 +280,7 @@ def filter_img(img: np.array, contour_area: int = 5000) -> np.ndarray:
 def rmse_parameters(squared: bool):
     def rmse_parameters_(y_true, y_pred):
         return mean_squared_error(y_true, y_pred, squared=squared)
+
     return rmse_parameters_
 
 
@@ -294,8 +294,8 @@ def measure_metrics(metric_fns: Dict, y_pred: pd.Series, y_true: pd.Series) -> d
 def compute_consensus_score(row):
     score_r = row['Score R']
     score_d = row['Score D']
-    score_r = score_d if pd.isna(score_r) else False
-    score_d = score_r if pd.isna(score_d) else False
+    score_r = score_d if pd.isna(score_r) else score_r
+    score_d = score_r if pd.isna(score_d) else score_d
     row['Score C'] = (score_r + score_d) / 2
     row['Score C rnd'] = math.ceil((score_r + score_d) / 2)
     return row
@@ -349,7 +349,24 @@ def extract_ann_score(filename: str, dataset_name: str, scoring_ds_with_values_p
     return extracted_scores
 
 
-if __name__ == '__main__':
+def compute_df_metrics(model_outputs: pd.DataFrame,
+                       gt_column: str,
+                       model_columns: List,
+                       metrics: Dict[str, Callable]) -> pd.DataFrame:
 
+    df_metrics = pd.DataFrame()
+    for model_column in model_columns:
+        pred_values = model_outputs[model_column]
+        gt_values = model_outputs[gt_column]
+        calculated_metrics = measure_metrics(metrics, pred_values, gt_values)
+
+        calculated_metrics = {key: [value] for key, value in calculated_metrics.items()}
+        calculated_metrics_df = pd.DataFrame(calculated_metrics)
+        calculated_metrics_df.index = [model_column]
+
+        df_metrics = pd.concat([df_metrics, calculated_metrics_df], axis=0)
+    return df_metrics
+
+if __name__ == '__main__':
     # Test reading inference images
     image_paths = read_inference_images(inference_dataset='dataset/inference/test')
