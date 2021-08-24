@@ -7,7 +7,8 @@ python train_segmentation.py \
     --loss_cls SL1 \
     --optimizer Adam_amsgrad \
     --lr 0.0001 \
-    --batch_size 12
+    --batch_size 12 \
+    --use_cls_head
 
 python train_segmentation.py \
     --dataset_dir dataset/covid_segmentation_single_crop \
@@ -18,7 +19,8 @@ python train_segmentation.py \
     --loss_cls SL1 \
     --optimizer Adam_amsgrad \
     --lr 0.0001 \
-    --batch_size 20
+    --batch_size 20 \
+    --use_cls_head
 
 python train_segmentation.py \
     --dataset_dir dataset/covid_segmentation_single_crop \
@@ -29,7 +31,8 @@ python train_segmentation.py \
     --loss_cls SL1 \
     --optimizer Adam \
     --lr 0.01 \
-    --batch_size 10
+    --batch_size 10 \
+    --use_cls_head
 
 python train_segmentation.py \
     --dataset_dir dataset/covid_segmentation_single_crop \
@@ -40,7 +43,8 @@ python train_segmentation.py \
     --loss_cls L1 \
     --optimizer Adam \
     --lr 0.001 \
-    --batch_size 36
+    --batch_size 36 \
+    --use_cls_head
 
 python train_segmentation.py \
     --dataset_dir dataset/covid_segmentation_single_crop \
@@ -51,7 +55,8 @@ python train_segmentation.py \
     --loss_cls SL1 \
     --optimizer AdamW_amsgrad \
     --lr 0.0005 \
-    --batch_size 64
+    --batch_size 64 \
+    --use_cls_head
 
 python train_segmentation.py \
     --dataset_dir dataset/covid_segmentation_single_crop \
@@ -62,7 +67,8 @@ python train_segmentation.py \
     --loss_cls BCE \
     --optimizer AdamW \
     --lr 0.01 \
---batch_size 48
+    --batch_size 48 \
+    --use_cls_head
 
 python train_segmentation.py \
     --dataset_dir dataset/covid_segmentation_single_crop \
@@ -73,7 +79,8 @@ python train_segmentation.py \
     --loss_cls BCE \
     --optimizer AdamW \
     --lr 0.001 \
-    --batch_size 96
+    --batch_size 96 \
+    --use_cls_head
 
 python train_segmentation.py \
     --dataset_dir dataset/covid_segmentation_single_crop \
@@ -84,7 +91,8 @@ python train_segmentation.py \
     --loss_cls SL1 \
     --optimizer AdamW_amsgrad \
     --lr 0.005 \
-    --batch_size 48
+    --batch_size 48 \
+    --use_cls_head
 
 python train_segmentation.py \
     --dataset_dir dataset/covid_segmentation_single_crop \
@@ -95,4 +103,5 @@ python train_segmentation.py \
     --loss_cls L1 \
     --optimizer RMSprop \
     --lr 0.0001 \
-    --batch_size 18
+    --batch_size 18 \
+    --use_cls_head
