@@ -142,7 +142,7 @@ if __name__ == '__main__':
     parser.add_argument('--es_min_delta', default=0.01, type=float)
     parser.add_argument('--monitor_metric', default='f1_seg', type=str)
     parser.add_argument('--epochs', default=30, type=int)
-    parser.add_argument('--use_cls_head', default=True, type=bool)
+    parser.add_argument('--use_cls_head', action='store_true')
     parser.add_argument('--save_dir', default='models', type=str)
     parser.add_argument('--wandb_project_name', default=None, type=str)
     parser.add_argument('--wandb_api_key', default='b45cbe889f5dc79d1e9a0c54013e6ab8e8afb871', type=str)
