@@ -2,6 +2,7 @@ import os
 import json
 import math
 import warnings
+from pathlib import Path
 from typing import Dict, List, Callable
 
 import io
@@ -302,23 +303,25 @@ def compute_consensus_score(row):
 
 
 def process_gt_metadata(df: pd.DataFrame) -> pd.DataFrame:
-    df = df[df['ann_found'] == True]
+    df = df[(df['ann_found'] == 'Yes') & (df['Score R'].notna() | df['Score D'].notna())]
     df = df.apply(compute_consensus_score, axis=1)
     return df
 
 
-def read_inference_images(inference_dataset: str) -> List[str]:
-    img_paths = []
-    for dataset in os.listdir(inference_dataset):
-        full_dataset_folder = os.path.join(inference_dataset, dataset)
-        if not os.path.isdir(full_dataset_folder):
-            continue
-        imgs_dir = os.path.join(full_dataset_folder, 'img')
-        full_img_paths = [os.path.join(imgs_dir, img_filename) for img_filename in os.listdir(imgs_dir)]
-        img_paths += full_img_paths
-    return img_paths
+def get_list_of_files(dir: str, ext: List[str] = ('.png', '.jpg', '.jpeg', '.bmp')) -> List[str]:
+    all_files = list()
+    for root, dirs, files in os.walk(dir):
+        for file in files:
+            file_ext = Path(file).suffix
+            file_ext = file_ext.lower()
+            if file_ext in ext:
+                file_path = os.path.join(root, file)
+                all_files.append(file_path)
+    all_files.sort()
+    return all_files
 
 
+# TODO @datonefaridze: remove this function when we merge scoring and segmentation datasets
 def find_filenames(search_pattern: str, path: str):
     for root, dirs, files in os.walk(path):
         for filename in files:
@@ -326,22 +329,27 @@ def find_filenames(search_pattern: str, path: str):
                 return os.path.join(root, filename)
 
 
-def extract_ann_score(filename: str, dataset_name: str, scoring_ds_with_values_path: str):
+# TODO @datonefaridze: change this function when we merge scoring and segmentation datasets
+def extract_ann_score(filename: str,
+                      dataset_name: str,
+                      normal_datasets: List[str],
+                      scoring_dataset_dir: str):
     extracted_scores = {'Inaccurate labelling': None, 'Score R': None, 'Score D': None, 'Poor quality D': None,
-                        'Poor quality R': None, 'ann_found': True}
+                        'Poor quality R': None, 'ann_found': 'Yes'}
 
-    if dataset_name in ['chest_xray_normal', 'rsna_normal']:
+    if dataset_name in normal_datasets:
         extracted_scores['Score R'] = 0
         extracted_scores['Score D'] = 0
     else:
         base_filename, ext = os.path.splitext(filename)
-        found_ann = find_filenames(base_filename, scoring_ds_with_values_path)
+        found_ann = find_filenames(base_filename, scoring_dataset_dir)
         if found_ann is None:
-            extracted_scores['ann_found'] = False
+            extracted_scores['ann_found'] = 'No'
             return extracted_scores
 
         with open(found_ann) as f:
             data = json.load(f)
+
         for tag in data['tags']:
             name = tag['name']
             value = tag['value']
@@ -367,6 +375,8 @@ def compute_df_metrics(model_outputs: pd.DataFrame,
         df_metrics = pd.concat([df_metrics, calculated_metrics_df], axis=0)
     return df_metrics
 
+
 if __name__ == '__main__':
     # Test reading inference images
-    image_paths = read_inference_images(inference_dataset='dataset/inference/test')
+    image_paths = get_list_of_files(dir='dataset/inference')
+
