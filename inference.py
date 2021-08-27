@@ -9,17 +9,21 @@ from tqdm import tqdm
 import segmentation_models_pytorch as smp
 from tools.datasets import InferenceDataset
 from tools.models import CovidScoringNet, SegmentationModel
-from tools.utils import extract_model_opts, read_inference_images
+from tools.utils import extract_model_opts, get_list_of_files
 
 
-def inference(model, inference_dataset, output_dir, csv_name):
+def inference(model: CovidScoringNet,
+              dataset: InferenceDataset,
+              output_dir: str,
+              csv_name: str) -> None:
     model.eval()
     output_lungs_dir = os.path.join(output_dir, 'lungs')
     output_covid_dir = os.path.join(output_dir, 'covid')
     os.makedirs(output_lungs_dir) if not os.path.exists(output_lungs_dir) else False
     os.makedirs(output_covid_dir) if not os.path.exists(output_covid_dir) else False
     csv_file = {'dataset': [], 'filename': [], 'lungs_mask': [], 'covid_mask': [], 'score': []}
-    for source_img, img_path in tqdm(inference_dataset, desc='Prediction', unit=' images'):
+
+    for source_img, img_path in tqdm(dataset, desc='Prediction', unit=' images'):
         image_path = os.path.normpath(img_path)
 
         filename = os.path.split(image_path)[-1]
@@ -42,9 +46,11 @@ def inference(model, inference_dataset, output_dir, csv_name):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Inference pipeline')
+
+    # Dataset settings
     parser.add_argument('--data_dir', type=str)
-    parser.add_argument('--output_dir', type=str)
-    parser.add_argument('--csv_name', default='Scores.csv', type=str)
+    parser.add_argument('--output_dir', default='dataset/inference_outputs', type=str)
+    parser.add_argument('--csv_name', default='model_outputs_our.csv', type=str)
 
     # COVID model settings
     parser.add_argument('--covid_model_path', type=str)
@@ -70,6 +76,7 @@ if __name__ == '__main__':
     parser.add_argument('--lungs_aux_params', default=False, type=bool)
     parser.add_argument('--lungs_input_size', default=(384, 384), type=int)
 
+    # Additional settings
     parser.add_argument('--automatic_parser', default=True, type=bool)
     parser.add_argument('--threshold', default=0.5, type=float)
     args = parser.parse_args()
@@ -130,10 +137,10 @@ if __name__ == '__main__':
     lung_preprocessing_params = smp.encoders.get_preprocessing_params(encoder_name=args.lungs_encoder_name,
                                                                       pretrained=args.lungs_encoder_weights)
 
-    img_paths = read_inference_images(args.data_dir)
-    inference_dataset = InferenceDataset(img_paths, input_size=args.lungs_input_size)
+    img_paths = get_list_of_files(args.data_dir)
+    dataset = InferenceDataset(img_paths, input_size=args.lungs_input_size)
 
     model = CovidScoringNet(lungs_model, covid_model, device, args.threshold, args.lungs_input_size, args.covid_input_size,
                             covid_preprocessing_params, lung_preprocessing_params, flag_type='single_crop')
 
-    inference(model, inference_dataset, args.output_dir, args.csv_name)
+    inference(model, dataset, args.output_dir, args.csv_name)
