@@ -66,7 +66,7 @@ class SegmentationModel:
         self.es_min_delta = es_min_delta
         self.monitor_metric = monitor_metric
         run_time = datetime.now().strftime("%d%m%y_%H%M")
-        self.run_name = '{:s}_{:s}_{:s}'.format(self.model_name, self.encoder_name, run_time)
+        self.run_name = '{:s}_{:s}_{:s}_{:s}'.format(self.model_name, self.encoder_name, self.encoder_weights, run_time)
         self.model_dir = os.path.join(save_dir, self.run_name)
 
         # Logging settings
