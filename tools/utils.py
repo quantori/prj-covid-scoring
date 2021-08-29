@@ -357,10 +357,10 @@ def extract_ann_score(filename: str,
     return extracted_scores
 
 
-def compute_df_metrics(model_outputs: pd.DataFrame,
-                       gt_column: str,
-                       model_columns: List,
-                       metrics: Dict[str, Callable]) -> pd.DataFrame:
+def compute_metrics(model_outputs: pd.DataFrame,
+                    gt_column: str,
+                    model_columns: List,
+                    metrics: Dict[str, Callable]) -> pd.DataFrame:
 
     df_metrics = pd.DataFrame()
     for model_column in model_columns:

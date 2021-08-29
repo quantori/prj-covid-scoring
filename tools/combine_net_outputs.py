@@ -28,6 +28,7 @@ def combine_inferences(args):
     needed_columns = ['dataset', 'filename', 'subset', 'label', 'Our', 'BSNet', 'CovidNet', 'Score R', 'Score D', 'GT']
     drop_columns = set(result.columns) - set(needed_columns)
     result = result.drop(list(drop_columns), axis=1)
+    result.rename(columns={'dataset': 'Dataset', 'filename': 'Filename', 'subset': 'Subset', 'label': 'Label'}, inplace=True)
 
     os.makedirs(args.save_dir) if not os.path.exists(args.save_dir) else False
     save_path = os.path.join(args.save_dir, args.save_name)
@@ -40,7 +41,7 @@ if __name__ == '__main__':
     parser.add_argument('--our_csv', type=str)
     parser.add_argument('--bsnet_csv', type=str)
     parser.add_argument('--covid_net_csv', type=str)
-    parser.add_argument('--save_dir', default='dataset/inference_outputs', type=str)
+    parser.add_argument('--save_dir', default='resources', type=str)
     parser.add_argument('--save_name', default='model_outputs_all.csv', type=str)
     args = parser.parse_args()
 
