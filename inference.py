@@ -29,7 +29,7 @@ def inference(model: CovidScoringNet,
         filename = os.path.split(image_path)[-1]
         dataset_name = image_path.split(os.sep)[-3]
 
-        predicted_score, mask_lungs, mask_covid = model.predict(source_img)
+        predicted_score, mask_lungs, mask_covid, raw_pred = model.predict(source_img)
         cv2.imwrite(os.path.join(output_lungs_dir, filename), mask_lungs * 255)
         cv2.imwrite(os.path.join(output_covid_dir, filename), mask_covid * 255)
 
@@ -38,6 +38,12 @@ def inference(model: CovidScoringNet,
         csv_file['lungs_mask'].append(os.path.join(output_lungs_dir, filename))
         csv_file['covid_mask'].append(os.path.join(output_covid_dir, filename))
         csv_file['score'].append(predicted_score)
+        for idx in range(len(raw_pred)):
+            raw_pred_col = 'raw_pred_' + str(idx)
+            if raw_pred_col not in csv_file.keys():
+                csv_file[raw_pred_col] = []
+
+            csv_file[raw_pred_col].append(raw_pred[idx])
 
     csv_save_path = os.path.join(output_dir, csv_name)
     df = pd.DataFrame(csv_file)
@@ -137,7 +143,7 @@ if __name__ == '__main__':
     lung_preprocessing_params = smp.encoders.get_preprocessing_params(encoder_name=args.lungs_encoder_name,
                                                                       pretrained=args.lungs_encoder_weights)
 
-    img_paths = get_list_of_files(args.data_dir)
+    img_paths = get_list_of_files(args.data_dir, ['mask'])
     dataset = InferenceDataset(img_paths, input_size=args.lungs_input_size)
 
     model = CovidScoringNet(lungs_model, covid_model, device, args.threshold, args.lungs_input_size, args.covid_input_size,

@@ -28,19 +28,18 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--net_comparison_csv', required=True, type=str)
     parser.add_argument('--dataset', default='all', type=str, help='all or a specific dataset name')
-    parser.add_argument('--label', default='COVID-19', type=str, help='all, Normal, or COVID-19')
-    parser.add_argument('--subset', default='train', type=str, help='all, train, val, or test')
+    parser.add_argument('--label', default='all', type=str, help='all, Normal, or COVID-19')
+    parser.add_argument('--subset', default='test', type=str, help='all, train, val, or test')
     parser.add_argument('--gt_column', default='GT', type=str)
     parser.add_argument('--model_columns', nargs='+', default=['Our', 'BSNet', 'CovidNet'], type=str)
     parser.add_argument('--save_dir', default='resources', type=str)
     parser.add_argument('--save_name', default='metrics.csv', type=str)
     args = parser.parse_args()
 
-    df_src = pd.read_csv(args.net_comparison_csv)
-    df_agg = df_src.copy(deep=True)
+    df_agg = pd.read_csv(args.net_comparison_csv)
 
     if args.dataset != 'all':
-        dataset_names = list(df_src['Dataset'].unique())
+        dataset_names = list(df_agg['Dataset'].unique())
         assert args.dataset in dataset_names, 'There is no dataset {:s}'.format(args.dataset)
         df_agg = df_agg[df_agg['Dataset'] == args.dataset]
 
@@ -56,4 +55,4 @@ if __name__ == '__main__':
     base_ext = str(Path(args.save_name).suffix)
     args.save_name = '_'.join([base_name, args.label.lower(), args.subset.lower()]) + base_ext
 
-    main(df_src, args.gt_column, args.model_columns, args.save_dir, args.save_name)
+    main(df_agg, args.gt_column, args.model_columns, args.save_dir, args.save_name)

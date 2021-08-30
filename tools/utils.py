@@ -308,9 +308,10 @@ def process_gt_metadata(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def get_list_of_files(dir: str, ext: List[str] = ('.png', '.jpg', '.jpeg', '.bmp')) -> List[str]:
+def get_list_of_files(dir: str, exclude_dirs: str, ext: List[str] = ('.png', '.jpg', '.jpeg', '.bmp')) -> List[str]:
     all_files = list()
-    for root, dirs, files in os.walk(dir):
+    for root, dirs, files in os.walk(dir, topdown=True):
+        dirs[:] = [d for d in dirs if d not in exclude_dirs]
         for file in files:
             file_ext = Path(file).suffix
             file_ext = file_ext.lower()
@@ -375,6 +376,11 @@ def compute_metrics(model_outputs: pd.DataFrame,
         df_metrics = pd.concat([df_metrics, calculated_metrics_df], axis=0)
     return df_metrics
 
+
+def threshold_raw_values(row, threshold, inference_columns):
+    raw_pred_arr = np.array([row[column] for column in inference_columns])
+    thresholded_pred = np.sum(raw_pred_arr > threshold)
+    return thresholded_pred
 
 if __name__ == '__main__':
     # Test reading inference images

@@ -731,5 +731,6 @@ class CovidScoringNet:
 
         sum_of_lung_parts_areas = np.sum(lung_parts, axis=(1, 2))
         sum_of_covid_intersected_ares = np.sum(covid_intersection_lung_parts, axis=(1, 2))
-        calculated_score = np.sum(sum_of_covid_intersected_ares / sum_of_lung_parts_areas > self.threshold)
-        return calculated_score, pred_mask_lungs, pred_mask_covid
+        raw_pred = sum_of_covid_intersected_ares / np.maximum(sum_of_lung_parts_areas, 1e-14)
+        calculated_score = np.sum(raw_pred > self.threshold)
+        return calculated_score, pred_mask_lungs, pred_mask_covid, raw_pred

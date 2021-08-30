@@ -25,7 +25,8 @@ def combine_inferences(args):
     for df in dfs:
         result = pd.merge(result, df, on=['filename', 'dataset'])
 
-    needed_columns = ['dataset', 'filename', 'subset', 'label', 'Our', 'BSNet', 'CovidNet', 'Score R', 'Score D', 'GT']
+    needed_columns = ['dataset', 'filename', 'subset', 'label', 'Our', 'BSNet', 'CovidNet', 'Score R', 'Score D', 'GT',
+                      ] + ['raw_pred_' + str(idx) for idx in range(6)]
     drop_columns = set(result.columns) - set(needed_columns)
     result = result.drop(list(drop_columns), axis=1)
     result.rename(columns={'dataset': 'Dataset', 'filename': 'Filename', 'subset': 'Subset', 'label': 'Label'}, inplace=True)
