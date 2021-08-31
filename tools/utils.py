@@ -365,8 +365,8 @@ def compute_metrics(model_outputs: pd.DataFrame,
 
     df_metrics = pd.DataFrame()
     for model_column in model_columns:
-        pred_values = model_outputs[model_column]
-        gt_values = model_outputs[gt_column]
+        pred_values = np.array(model_outputs[model_column])
+        gt_values = np.array(model_outputs[gt_column])
         calculated_metrics = measure_metrics(metrics, pred_values, gt_values)
 
         calculated_metrics = {key: [value] for key, value in calculated_metrics.items()}

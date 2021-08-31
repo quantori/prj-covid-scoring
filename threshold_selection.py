@@ -19,11 +19,12 @@ def main(model_outputs_all_df: pd.DataFrame, gt_column: str, num_thresholds: int
         threshold = threshold_ / num_thresholds
         df_metrics['Threshold'].append(threshold)
         threshold_values = model_outputs_all_df.apply(threshold_raw_values, threshold=threshold,
-                                                       inference_columns=['raw_pred_' + str(idx) for idx in range(6)], axis=1)
+                                                      inference_columns=['raw_pred_' + str(idx) for idx in range(6)],
+                                                      axis=1)
         threshold_values = np.array(threshold_values)
 
         for metric_name, metrics_fn in metrics.items():
-            df_metrics[metric_name].append(metrics_fn(threshold_values, gt_values))
+            df_metrics[metric_name].append(metrics_fn(gt_values, threshold_values))
 
     df_metrics_df = pd.DataFrame(df_metrics)
     df_metrics_df.to_csv(output_filename, index=False)
