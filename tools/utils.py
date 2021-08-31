@@ -3,7 +3,7 @@ import json
 import math
 import warnings
 from pathlib import Path
-from typing import Dict, List, Callable
+from typing import Dict, List, Callable, Tuple
 
 import io
 import cv2
@@ -381,6 +381,30 @@ def threshold_raw_values(row, threshold, inference_columns):
     raw_pred_arr = np.array([row[column] for column in inference_columns])
     thresholded_pred = np.sum(raw_pred_arr > threshold)
     return thresholded_pred
+
+
+def create_vis(pred_imgs: List, gt_mask: np.array, output_path_map: str = 'output.avi',
+               output_path_mask: str = 'output.avi', output_size: Tuple[int, int] = (512, 512)):
+    fourcc = cv2.VideoWriter_fourcc(*'XVID')
+    out_prob_map = cv2.VideoWriter(output_path_map, fourcc, 3.0, output_size)
+    out_pred_mask = cv2.VideoWriter(output_path_mask, fourcc, 3.0, output_size)
+
+    for prob_map in pred_imgs:
+        pred_mask = (prob_map > 127) * 255
+
+        gt_mask_red = np.stack([np.zeros(output_size), np.zeros(output_size), gt_mask], axis=2)
+        prob_map = np.stack([prob_map, prob_map, prob_map], axis=2)
+        pred_mask = np.stack([pred_mask, pred_mask, pred_mask], axis=2)
+
+        overlay_prob_map = (gt_mask_red * 0.3 + prob_map * 0.7).astype(np.uint8)
+        overlay_pred_mask = (gt_mask_red * 0.3 + pred_mask * 0.7).astype(np.uint8)
+
+        out_prob_map.write(overlay_prob_map)
+        out_pred_mask.write(overlay_pred_mask)
+
+    out_prob_map.release()
+    out_pred_mask.release()
+
 
 if __name__ == '__main__':
     # Test reading inference images
