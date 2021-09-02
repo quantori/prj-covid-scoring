@@ -81,10 +81,7 @@ def main(args):
             cv2.imwrite(mask_output, mask)
 
         if not (args.scoring_dataset_dir is None):
-            # TODO @datonefaridze: think of whether we need separate metadata_train/val/test.csv files
-            subset_csv_path = os.path.join(args.output_dir, 'metadata_{:s}.csv'.format(subset))
             subset_df = pd.DataFrame(metadata)
-            subset_df.to_csv(subset_csv_path, index=False)
             metadata_df = pd.concat([metadata_df, subset_df], axis=0)
         metadata_csv_path = os.path.join(args.output_dir, 'metadata.csv')
         metadata_df.to_csv(metadata_csv_path, index=False)
