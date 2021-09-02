@@ -60,7 +60,7 @@ if __name__ == "__main__":
 
     # Dataset settings
     parser.add_argument("--data_dir", type=str)
-    parser.add_argument("--output_dir", default="dataset/inference_outputs", type=str)
+    parser.add_argument("--output_dir", default="dataset/inference_outputs_our", type=str)
     parser.add_argument("--csv_name", default="model_outputs_our.csv", type=str)
 
     # COVID model settings
