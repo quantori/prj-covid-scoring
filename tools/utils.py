@@ -271,7 +271,6 @@ def filter_img(img: np.array, contour_area: int = 5000) -> np.ndarray:
         area = cv2.contourArea(c)
         if area < contour_area:
             cv2.drawContours(thresh, [c], -1, (0, 0, 0), -1)
-
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
     opening = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel, iterations=2)
     closing = cv2.morphologyEx(opening, cv2.MORPH_CLOSE, kernel)
@@ -281,11 +280,10 @@ def filter_img(img: np.array, contour_area: int = 5000) -> np.ndarray:
 def rmse_parameters(squared: bool):
     def rmse_parameters_(y_true, y_pred):
         return mean_squared_error(y_true, y_pred, squared=squared)
-
     return rmse_parameters_
 
 
-def measure_metrics(metric_fns: Dict, y_pred: pd.Series, y_true: pd.Series) -> dict:
+def measure_metrics(metric_fns: Dict, y_pred: np.ndarray, y_true: np.ndarray) -> dict:
     metrics = {name: None for name in metric_fns.keys()}
     for metric_name, metric_fn in metric_fns.items():
         metrics[metric_name] = metric_fn(y_true, y_pred)
@@ -308,7 +306,7 @@ def process_gt_metadata(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def get_list_of_files(dir: str, exclude_dirs: str, ext: List[str] = ('.png', '.jpg', '.jpeg', '.bmp')) -> List[str]:
+def get_list_of_files(dir: str, exclude_dirs: List[str], ext: List[str] = ('.png', '.jpg', '.jpeg', '.bmp')) -> List[str]:
     all_files = list()
     for root, dirs, files in os.walk(dir, topdown=True):
         dirs[:] = [d for d in dirs if d not in exclude_dirs]
@@ -383,6 +381,6 @@ def threshold_raw_values(row, threshold, inference_columns):
     return thresholded_pred
 
 if __name__ == '__main__':
-    # Test reading inference images
+    # Test reading of inference images
     image_paths = get_list_of_files(dir='dataset/inference')
 
