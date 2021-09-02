@@ -21,7 +21,10 @@ def inference(model: CovidScoringNet,
     output_covid_dir = os.path.join(output_dir, 'covid')
     os.makedirs(output_lungs_dir) if not os.path.exists(output_lungs_dir) else False
     os.makedirs(output_covid_dir) if not os.path.exists(output_covid_dir) else False
-    csv_file = {'dataset': [], 'filename': [], 'lungs_mask': [], 'covid_mask': [], 'score': []}
+    data = {'dataset': [], 'filename': [], 'lungs_mask': [], 'covid_mask': [], 'score': []}
+    keys = ["lung_segment_{:d}".format(idx + 1) for idx in range(6)]
+    lung_segment_probs = {key: [] for key in keys}
+    data.update(lung_segment_probs)
 
     for source_img, img_path in tqdm(dataset, desc='Prediction', unit=' images'):
         image_path = os.path.normpath(img_path)
@@ -33,20 +36,17 @@ def inference(model: CovidScoringNet,
         cv2.imwrite(os.path.join(output_lungs_dir, filename), mask_lungs * 255)
         cv2.imwrite(os.path.join(output_covid_dir, filename), mask_covid * 255)
 
-        csv_file['dataset'].append(dataset_name)
-        csv_file['filename'].append(filename)
-        csv_file['lungs_mask'].append(os.path.join(output_lungs_dir, filename))
-        csv_file['covid_mask'].append(os.path.join(output_covid_dir, filename))
-        csv_file['score'].append(predicted_score)
+        data['dataset'].append(dataset_name)
+        data['filename'].append(filename)
+        data['lungs_mask'].append(os.path.join(output_lungs_dir, filename))
+        data['covid_mask'].append(os.path.join(output_covid_dir, filename))
+        data['score'].append(predicted_score)
         for idx in range(len(raw_pred)):
-            raw_pred_col = 'raw_pred_' + str(idx)
-            if raw_pred_col not in csv_file.keys():
-                csv_file[raw_pred_col] = []
-
-            csv_file[raw_pred_col].append(raw_pred[idx])
+            raw_pred_col = 'lung_segment_{:d}'.format(idx+1)
+            data[raw_pred_col].append(raw_pred[idx])
 
     csv_save_path = os.path.join(output_dir, csv_name)
-    df = pd.DataFrame(csv_file)
+    df = pd.DataFrame(data)
     df.to_csv(csv_save_path, index=False)
 
 
