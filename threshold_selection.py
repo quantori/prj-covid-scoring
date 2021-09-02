@@ -17,7 +17,7 @@ def main(
     save_name: str,
 ) -> None:
 
-    metris_fns = {
+    metric_fns = {
         "MAE": mean_absolute_error,
         "MSE": mean_squared_error,
         "RMSE": rmse_parameters(squared=False),
@@ -44,7 +44,7 @@ def main(
         )
         threshold_values = np.array(threshold_values)
 
-        for metric_name, metrics_fn in metris_fns.items():
+        for metric_name, metrics_fn in metric_fns.items():
             metrics[metric_name].append(metrics_fn(gt_values, threshold_values))
 
     save_path = os.path.join(save_dir, save_name)
