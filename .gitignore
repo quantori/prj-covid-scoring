@@ -13,6 +13,8 @@
 # Models
 /models*/
 /trained_models/
+/models_lungs
+/models_covid
 
 # Cache files
 __pycache__/
