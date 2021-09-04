@@ -1,0 +1,6 @@
+wdir: ../dataset
+outs:
+- md5: 58c0bf58c18708644ca86858b73c8b36.dir
+  size: 3515821983
+  nfiles: 1429
+  path: covid_scoring
