@@ -1,0 +1,6 @@
+wdir: ../dataset
+outs:
+- md5: 7c1c7ea76bb9f79caba2cb80675b9a76.dir
+  size: 297714157
+  nfiles: 3074
+  path: covid_segmentation_single_crop
