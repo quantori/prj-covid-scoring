@@ -434,7 +434,10 @@ def compute_consensus_score(row):
 
 def process_gt_metadata(df: pd.DataFrame) -> pd.DataFrame:
     df = df[
-        (df["ann_found"] == "Yes") & (df["Score R"].notna() | df["Score D"].notna())
+        (df["ann_found"] == "Yes")
+        & (df["Score R"].notna() | df["Score D"].notna())
+        & (df["Poor quality D"] == "No")
+        & (df["Poor quality R"] == "No")
     ]
     df = df.apply(compute_consensus_score, axis=1)
     return df
@@ -474,11 +477,11 @@ def extract_ann_score(
     scoring_dataset_dir: str,
 ):
     extracted_scores = {
-        "Inaccurate labelling": None,
+        "Inaccurate labelling": "No",
         "Score R": None,
         "Score D": None,
-        "Poor quality D": None,
-        "Poor quality R": None,
+        "Poor quality D": "No",
+        "Poor quality R": "No",
         "ann_found": "Yes",
     }
 
@@ -499,6 +502,8 @@ def extract_ann_score(
             name = tag["name"]
             value = tag["value"]
             extracted_scores[name] = value
+            if ("Poor" in tag["name"]) or ("Inaccurate labelling" in tag["name"]):
+                extracted_scores[name] = "Yes"
     return extracted_scores
 
 
@@ -531,4 +536,7 @@ def threshold_raw_values(row, threshold, inference_columns):
 
 if __name__ == "__main__":
     # Test reading of inference images
-    image_paths = get_list_of_files(dir="dataset/inference")
+    image_paths = get_list_of_files(
+        dir="dataset/inference",
+        exclude_dirs=['mask']
+    )
