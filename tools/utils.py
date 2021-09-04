@@ -434,8 +434,10 @@ def compute_consensus_score(row):
 
 def process_gt_metadata(df: pd.DataFrame) -> pd.DataFrame:
     df = df[
-        (df["ann_found"] == "Yes") & (df["Score R"].notna() | df["Score D"].notna()) &
-        (df["Poor quality D"] == "No") & (df["Poor quality R"] == "No")
+        (df["ann_found"] == "Yes")
+        & (df["Score R"].notna() | df["Score D"].notna())
+        & (df["Poor quality D"] == "No")
+        & (df["Poor quality R"] == "No")
     ]
     df = df.apply(compute_consensus_score, axis=1)
     return df
@@ -534,4 +536,7 @@ def threshold_raw_values(row, threshold, inference_columns):
 
 if __name__ == "__main__":
     # Test reading of inference images
-    image_paths = get_list_of_files(dir="dataset/inference")
+    image_paths = get_list_of_files(
+        dir="dataset/inference",
+        exclude_dirs=['mask']
+    )
