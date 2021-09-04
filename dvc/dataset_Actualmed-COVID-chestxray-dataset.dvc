@@ -1,6 +1,0 @@
-wdir: ../dataset
-outs:
-- md5: f5eda927dfd4d710ca039ea6a773c553.dir
-  size: 1164508920
-  nfiles: 232
-  path: Actualmed-COVID-chestxray-dataset

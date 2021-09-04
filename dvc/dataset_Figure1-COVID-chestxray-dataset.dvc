@@ -1,6 +1,0 @@
-wdir: ../dataset
-outs:
-- md5: 68dea08bab13d17c493f9d9c90016684.dir
-  size: 155903699
-  nfiles: 140
-  path: Figure1-COVID-chestxray-dataset
