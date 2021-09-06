@@ -1,4 +1,4 @@
-python train_segmentation.py \
+python train.py \
     --dataset_dir dataset/covid_segmentation_single_crop \
     --model_name Unet \
     --input_size 544 544 \
@@ -10,7 +10,7 @@ python train_segmentation.py \
     --batch_size 12 \
     --use_cls_head
 
-python train_segmentation.py \
+python train.py \
     --dataset_dir dataset/covid_segmentation_single_crop \
     --model_name Unet++ \
     --input_size 480 480 \
@@ -22,7 +22,7 @@ python train_segmentation.py \
     --batch_size 20 \
     --use_cls_head
 
-python train_segmentation.py \
+python train.py \
     --dataset_dir dataset/covid_segmentation_single_crop \
     --model_name DeepLabV3 \
     --input_size 480 480 \
@@ -34,7 +34,7 @@ python train_segmentation.py \
     --batch_size 10 \
     --use_cls_head
 
-python train_segmentation.py \
+python train.py \
     --dataset_dir dataset/covid_segmentation_single_crop \
     --model_name DeepLabV3+ \
     --input_size 480 480 \
@@ -46,7 +46,7 @@ python train_segmentation.py \
     --batch_size 36 \
     --use_cls_head
 
-python train_segmentation.py \
+python train.py \
     --dataset_dir dataset/covid_segmentation_single_crop \
     --model_name FPN \
     --input_size 384 384 \
@@ -58,7 +58,7 @@ python train_segmentation.py \
     --batch_size 64 \
     --use_cls_head
 
-python train_segmentation.py \
+python train.py \
     --dataset_dir dataset/covid_segmentation_single_crop \
     --model_name Linknet \
     --input_size 416 416 \
@@ -70,7 +70,7 @@ python train_segmentation.py \
     --batch_size 48 \
     --use_cls_head
 
-python train_segmentation.py \
+python train.py \
     --dataset_dir dataset/covid_segmentation_single_crop \
     --model_name PSPNet \
     --input_size 384 384 \
@@ -82,7 +82,7 @@ python train_segmentation.py \
     --batch_size 96 \
     --use_cls_head
 
-python train_segmentation.py \
+python train.py \
     --dataset_dir dataset/covid_segmentation_single_crop \
     --model_name PAN \
     --input_size 416 416 \
@@ -94,7 +94,7 @@ python train_segmentation.py \
     --batch_size 48 \
     --use_cls_head
 
-python train_segmentation.py \
+python train.py \
     --dataset_dir dataset/covid_segmentation_single_crop \
     --model_name MAnet \
     --input_size 544 544 \
