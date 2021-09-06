@@ -16,7 +16,7 @@ import segmentation_models_pytorch as smp
 from tools.models import TuningModel
 from tools.datasets import SegmentationDataset
 from tools.supervisely_tools import read_supervisely_project
-from tools.utils import BalancedWeighting, StaticWeighting
+from tools.utils import DynamicWeighting, StaticWeighting
 from tools.data_processing import split_data, convert_seconds_to_hms
 
 
@@ -95,7 +95,7 @@ def main(config=None):
             args.loss_cls = None
 
         weights_strategy = StaticWeighting(w1=1.0, w2=1.0)
-        # weights_strategy = BalancedWeighting(alpha=0.05)
+        # weights_strategy = DynamicWeighting(alpha=0.05)
 
         # Build model
         model = TuningModel(model_name=config.model_name,
