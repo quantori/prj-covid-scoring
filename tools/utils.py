@@ -65,7 +65,7 @@ class EarlyStopping:
                 return False
 
 
-class BalancedWeighting:
+class DynamicWeighting:
     def __init__(self, alpha: float = 0.5):
         self.w1 = 0
         self.w2 = 0
