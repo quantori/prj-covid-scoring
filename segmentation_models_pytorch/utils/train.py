@@ -68,8 +68,8 @@ class Epoch:
                     loss_logs = {self.loss_seg.__name__: loss_meter_seg.mean, self.loss_cls.__name__: loss_meter_cls.mean}
 
                     # Uncomment for printing out weights each epoch 
-                    # logs['weight_seg'] = self.weights_strategy.w1
-                    # logs['weight_cls'] = self.weights_strategy.w2
+                    logs['weight_seg'] = self.weights_strategy.w1
+                    logs['weight_cls'] = self.weights_strategy.w2
                     logs.update(loss_logs)
 
                     # Update metric logs
