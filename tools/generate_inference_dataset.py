@@ -39,7 +39,8 @@ def main(args):
     for subset in subsets:
         img_paths, ann_paths = subsets[subset]
         metadata = {'dataset': [], 'filename': [], 'Inaccurate labelling': [], 'Score R': [], 'Score D': [],
-                    'Poor quality D': [], 'Poor quality R': [], 'ann_found': [], 'subset': [], 'label': []}
+                    'Poor quality D': [], 'Poor quality R': [], 'ann_found': [], 'subset': [], 'label': [],
+                    'Normal': []}
 
         for idx in tqdm(range(len(img_paths)), desc='Processing of {:s} dataset'.format(subset), unit=' images'):
             image_path = img_paths[idx]
@@ -65,24 +66,21 @@ def main(args):
 
             metadata['label'].append(label)
             metadata['subset'].append(subset)
+            metadata['dataset'].append(dataset_name)
+            metadata['filename'].append(filename)
 
-            if not (args.scoring_dataset_dir is None):
-                extracted_values = extract_ann_score(filename,
-                                                     dataset_name,
-                                                     args.normal_datasets,
-                                                     args.scoring_dataset_dir)
-                metadata['dataset'].append(dataset_name)
-                metadata['filename'].append(filename)
+            extracted_values = extract_ann_score(dataset_name,
+                                                 args.normal_datasets,
+                                                 ann_path)
 
-                for key, value in extracted_values.items():
-                    metadata[key].append(value)
+            for key, value in extracted_values.items():
+                metadata[key].append(value)
 
             cv2.imwrite(img_output, image)
             cv2.imwrite(mask_output, mask)
 
-        if not (args.scoring_dataset_dir is None):
-            subset_df = pd.DataFrame(metadata)
-            metadata_df = pd.concat([metadata_df, subset_df], axis=0)
+        subset_df = pd.DataFrame(metadata)
+        metadata_df = pd.concat([metadata_df, subset_df], axis=0)
         metadata_csv_path = os.path.join(args.output_dir, 'metadata.csv')
         metadata_df.to_csv(metadata_csv_path, index=False)
 
@@ -96,14 +94,12 @@ if __name__ == '__main__':
                                                                 'Figure1-COVID-chestxray-dataset'), type=str)
     parser.add_argument('--normal_datasets', nargs='+', default=('chest_xray_normal',
                                                                  'rsna_normal'), type=str)
-    parser.add_argument('--scoring_dataset_dir', default='dataset/covid_scoring', type=str)
     parser.add_argument('--included_datasets', default=None, type=str)
     parser.add_argument('--excluded_datasets', default=None, type=str)
     parser.add_argument('--ratio', nargs='+', default=(0.8, 0.1, 0.1), type=float, help='train, val, and test sizes')
-    parser.add_argument('--output_dir', default='dataset/inference', type=str)
+    parser.add_argument('--output_dir', default='dataset/output/inference', type=str)
 
     args = parser.parse_args()
-
     if 'covid' in args.dataset_dir:
         args.class_name = 'COVID-19'
     elif 'lungs' in args.dataset_dir:

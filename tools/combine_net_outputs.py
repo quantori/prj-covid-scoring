@@ -6,18 +6,25 @@ import pandas as pd
 from tools.utils import process_gt_metadata
 
 
-def combine_inferences(args):
-    df_ground_truth = pd.read_csv(args.ground_truth_csv)
+def combine_inferences(
+    ground_truth_csv: str,
+    our_csv: str,
+    bsnet_csv: str,
+    covid_net_csv: str,
+    save_dir: str,
+    save_name: str,
+) -> None:
+    df_ground_truth = pd.read_csv(ground_truth_csv)
     df_ground_truth = process_gt_metadata(df_ground_truth)
     df_ground_truth = df_ground_truth.rename(columns={"Score C": "GT"})
 
-    df_our = pd.read_csv(args.our_csv)
+    df_our = pd.read_csv(our_csv)
     df_our = df_our.rename(columns={"score": "Our"})
 
-    df_bsnet = pd.read_csv(args.bsnet_csv)
+    df_bsnet = pd.read_csv(bsnet_csv)
     df_bsnet = df_bsnet.rename(columns={"predicted_score": "BSNet"})
 
-    df_covid_net = pd.read_csv(args.covid_net_csv)
+    df_covid_net = pd.read_csv(covid_net_csv)
     df_covid_net = df_covid_net.rename(columns={"rounded_geo_score": "CovidNet"})
 
     dfs = [df_our, df_bsnet, df_covid_net]
@@ -50,8 +57,8 @@ def combine_inferences(args):
         inplace=True,
     )
 
-    os.makedirs(args.save_dir) if not os.path.exists(args.save_dir) else False
-    save_path = os.path.join(args.save_dir, args.save_name)
+    os.makedirs(save_dir) if not os.path.exists(save_dir) else False
+    save_path = os.path.join(save_dir, save_name)
     result.to_csv(save_path, index=False)
 
 
@@ -65,4 +72,11 @@ if __name__ == "__main__":
     parser.add_argument("--save_name", default="model_outputs_all.csv", type=str)
     args = parser.parse_args()
 
-    combine_inferences(args)
+    combine_inferences(
+        args.ground_truth_csv,
+        args.our_csv,
+        args.bsnet_csv,
+        args.covid_net_csv,
+        args.save_dir,
+        args.save_name,
+    )
