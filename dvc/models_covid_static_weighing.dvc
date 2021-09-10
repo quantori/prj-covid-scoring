@@ -1,0 +1,6 @@
+wdir: ..
+outs:
+- md5: 7cfdca1798166342e6312c1546a3fdaa.dir
+  size: 1086506773
+  nfiles: 9
+  path: models_covid_static_weighing
