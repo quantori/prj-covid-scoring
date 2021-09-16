@@ -1,6 +1,6 @@
 wdir: ../dataset
 outs:
-- md5: 286517479e4f55c7747f2f1aae34f0d2.dir
-  size: 2311370321
-  nfiles: 3102
+- md5: 1f76c1df3d1fe3efa94050587c9248ef.dir
+  size: 9759114526
+  nfiles: 6198
   path: covid_segmentation
