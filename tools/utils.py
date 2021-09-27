@@ -231,6 +231,7 @@ def extract_model_opts(model_path: str):
         "Linknet",
         "PSPNet",
         "PAN",
+        "MAnet",
     ]
 
     encoders = [
@@ -461,20 +462,10 @@ def get_list_of_files(
     return all_files
 
 
-# TODO @datonefaridze: remove this function when we merge scoring and segmentation datasets
-def find_filenames(search_pattern: str, path: str):
-    for root, dirs, files in os.walk(path):
-        for filename in files:
-            if search_pattern in filename:
-                return os.path.join(root, filename)
-
-
-# TODO @datonefaridze: change this function when we merge scoring and segmentation datasets
 def extract_ann_score(
-    filename: str,
     dataset_name: str,
     normal_datasets: List[str],
-    scoring_dataset_dir: str,
+    ann_path: str,
 ):
     extracted_scores = {
         "Inaccurate labelling": "No",
@@ -483,20 +474,18 @@ def extract_ann_score(
         "Poor quality D": "No",
         "Poor quality R": "No",
         "ann_found": "Yes",
+        "Normal": "No",
     }
 
     if dataset_name in normal_datasets:
         extracted_scores["Score R"] = 0
         extracted_scores["Score D"] = 0
+        extracted_scores["Normal"] = "Yes"
     else:
-        base_filename, ext = os.path.splitext(filename)
-        found_ann = find_filenames(base_filename, scoring_dataset_dir)
-        if found_ann is None:
-            extracted_scores["ann_found"] = "No"
-            return extracted_scores
-
-        with open(found_ann) as f:
+        with open(ann_path) as f:
             data = json.load(f)
+        if len(data["tags"]) == 0:
+            extracted_scores["ann_found"] = "No"
 
         for tag in data["tags"]:
             name = tag["name"]
