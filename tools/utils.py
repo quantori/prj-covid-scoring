@@ -462,21 +462,6 @@ def get_list_of_files(
     return all_files
 
 
-def remove_extension(path, extensions):
-    for ext in extensions:
-        path = path.replace(ext, "")
-    return path
-
-
-# TODO @datonefaridze: remove this function when we merge scoring and segmentation datasets
-def find_filenames(search_pattern: str, path: str):
-    for root, dirs, files in os.walk(path):
-        for filename in files:
-            if search_pattern in filename:
-                return filename
-    return None
-
-
 def extract_ann_score(
     dataset_name: str,
     normal_datasets: List[str],
@@ -491,7 +476,6 @@ def extract_ann_score(
         "ann_found": "Yes",
         "Normal": "No",
     }
-
 
     if dataset_name in normal_datasets:
         extracted_scores["Score R"] = 0
