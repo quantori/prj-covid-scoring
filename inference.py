@@ -13,7 +13,10 @@ from tools.utils import extract_model_opts, get_list_of_files
 
 
 def inference(
-    model: CovidScoringNet, dataset: InferenceDataset, output_dir: str, csv_name: str
+    model: CovidScoringNet,
+    dataset: InferenceDataset,
+    output_dir: str,
+    csv_name: str,
 ) -> None:
     model.eval()
     output_lungs_dir = os.path.join(output_dir, "lungs")
@@ -170,7 +173,7 @@ if __name__ == "__main__":
         args.covid_input_size,
         covid_preprocessing_params,
         lung_preprocessing_params,
-        flag_type="single_crop",
+        crop_type="single_crop",
     )
 
     inference(model, dataset, args.output_dir, args.csv_name)
