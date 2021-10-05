@@ -3,4 +3,4 @@ outs:
 - md5: 8d454164aa919b1046c3d27e90681b6c.dir
   size: 1086506773
   nfiles: 9
-  path: models_covid_dynamic_weighing
+  path: models_covid_dynamic_weighting
