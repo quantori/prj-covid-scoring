@@ -36,6 +36,7 @@ class SegmentationDataset(Dataset):
         image_path = self.img_paths[idx]
         ann_path = self.ann_paths[idx]
         image = cv2.imread(image_path)
+        image = cv2.resize(image, (512, 512))
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
         mask = convert_ann_to_mask(ann_path=ann_path, class_name=self.class_name)
@@ -44,9 +45,9 @@ class SegmentationDataset(Dataset):
         label = torch.unsqueeze(_label, -1).to(torch.float32)
 
         # Apply augmentation
-        if self.augmentation_params:
-            sample = self.augmentation_params(image=image, mask=mask)
-            image, mask = sample['image'], sample['mask']
+        # if self.augmentation_params:
+        #     sample = self.augmentation_params(image=image, mask=mask)
+        #     image, mask = sample['image'], sample['mask']
 
         # Apply transformation
         if self.transform_params:

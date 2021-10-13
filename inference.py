@@ -1,5 +1,6 @@
 import os
 import argparse
+import time
 
 import cv2
 import torch
@@ -26,6 +27,7 @@ def inference(
         "lungs_mask": [],
         "covid_mask": [],
         "score": [],
+        'covid_net_pred_time': []
     }
     keys = ["lung_segment_{:d}".format(idx + 1) for idx in range(6)]
     lung_segment_probs = {key: [] for key in keys}
@@ -36,16 +38,18 @@ def inference(
 
         filename = os.path.split(image_path)[-1]
         dataset_name = image_path.split(os.sep)[-3]
-
+        start = time.time()
         predicted_score, mask_lungs, mask_covid, raw_pred = model.predict(source_img)
-        cv2.imwrite(os.path.join(output_lungs_dir, filename), mask_lungs * 255)
-        cv2.imwrite(os.path.join(output_covid_dir, filename), mask_covid * 255)
+        end = time.time()
+        # cv2.imwrite(os.path.join(output_lungs_dir, filename), mask_lungs * 255)
+        # cv2.imwrite(os.path.join(output_covid_dir, filename), mask_covid * 255)
 
         data["dataset"].append(dataset_name)
         data["filename"].append(filename)
         data["lungs_mask"].append(os.path.join(output_lungs_dir, filename))
         data["covid_mask"].append(os.path.join(output_covid_dir, filename))
         data["score"].append(predicted_score)
+        data['covid_net_pred_time'].append(end-start)
         for idx in range(len(raw_pred)):
             raw_pred_col = "lung_segment_{:d}".format(idx + 1)
             data[raw_pred_col].append(raw_pred[idx])

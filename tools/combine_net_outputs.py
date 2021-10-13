@@ -43,6 +43,7 @@ def combine_inferences(
         "BSNet",
         "CovidNet",
         "Our",
+        'covid_net_pred_time'
     ]
     needed_columns += ["lung_segment_{:d}".format(idx + 1) for idx in range(6)]
     drop_columns = set(result.columns) - set(needed_columns)

@@ -24,6 +24,7 @@ def main(args):
                          ratio=args.ratio,
                          normal_datasets=['rsna_normal', 'chest_xray_normal'])
 
+
     preprocessing_params = smp.encoders.get_preprocessing_params(encoder_name=args.encoder_name,
                                                                  pretrained=args.encoder_weights)
 
@@ -40,6 +41,13 @@ def main(args):
     ])
 
     datasets = {}
+    distr = {"Actualmed-COVID-chestxray-dataset": {'train':0, 'val':0, 'test':0, '1':0, '0':0},
+             "chest_xray_normal": {'train':0, 'val':0, 'test':0, '1':0, '0':0},
+             "COVID-19-Radiography-Database": {'train':0, 'val':0, 'test':0, '1':0, '0':0},
+             "covid-chestxray-dataset": {'train':0, 'val':0, 'test':0, '1':0, '0':0},
+             "Figure1-COVID-chestxray-dataset": {'train':0, 'val':0, 'test':0, '1':0, '0':0},
+             "rsna_normal": {'train':0, 'val':0, 'test':0, '1':0, '0':0}}
+
     for subset_name in subsets:
         _augmentation_params = augmentation_params if subset_name == 'train' else None
         dataset = SegmentationDataset(img_paths=subsets[subset_name][0],
@@ -48,8 +56,19 @@ def main(args):
                                       class_name=args.class_name,
                                       augmentation_params=_augmentation_params,
                                       transform_params=preprocessing_params)
-        datasets[subset_name] = dataset
+        for idx in range(len(dataset)):
+            image_path = dataset.img_paths[idx]
+            a,b,c = dataset[idx]
 
+            for data in distr.keys():
+                # print(data)
+                if data in image_path:
+                    distr[data][subset_name] += 1
+                    distr[data][str(int(c))] += 1
+
+        datasets[subset_name] = dataset
+    print('a: ', distr)
+    return 0
     # Used only for augmentation debugging
     # import cv2
     # import torch
@@ -70,7 +89,7 @@ def main(args):
     train_loader = DataLoader(datasets['train'], batch_size=args.batch_size, num_workers=num_workers, shuffle=True)
     val_loader = DataLoader(datasets['val'], batch_size=args.batch_size, num_workers=num_workers)
     test_loader = DataLoader(datasets['test'], batch_size=args.batch_size, num_workers=num_workers)
-
+    return 0
     # Use all images from the logging folder without exclusion
     img_paths_logging, ann_paths_logging, dataset_names_logging = read_supervisely_project(sly_project_dir=args.logging_dir,
                                                                                            included_datasets=None,
@@ -147,7 +166,7 @@ if __name__ == '__main__':
     parser.add_argument('--wandb_project_name', default=None, type=str)
     parser.add_argument('--wandb_api_key', default='b45cbe889f5dc79d1e9a0c54013e6ab8e8afb871', type=str)
     args = parser.parse_args()
-
+    args.dataset_dir = r"C:\Users\daton\projects\prj-covid-scoring\dataset\newest_dataset_9_27_2021\COVID-19 segmentation and scoring"
     # Used only for debugging
     # args.excluded_datasets = [
     #     'covid-chestxray-dataset',
