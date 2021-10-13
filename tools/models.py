@@ -614,9 +614,9 @@ class CovidScoringNet:
                  covid_input_size: Union[int, List[int]] = (512, 512),
                  covid_preprocessing=None,
                  lung_preprocessing=None,
-                 flag_type: str = None):
+                 crop_type: str = None):
         assert 0 <= threshold <= 1, 'Threshold value is in an incorrect scale. It should be in the range [0,1].'
-        assert flag_type in ['no_crop', 'crop', 'single_crop'], 'invalid flag type'
+        assert crop_type in ['no_crop', 'crop', 'single_crop'], 'invalid flag type'
         self.device = device
         self.threshold = threshold
 
@@ -627,7 +627,7 @@ class CovidScoringNet:
 
         self.lung_preprocessing = lung_preprocessing
         self.covid_preprocessing = covid_preprocessing
-        self.flag_type = flag_type
+        self.crop_type = crop_type
 
         self.preprocess_image_lung = transforms.Compose([transforms.ToTensor(),
                                                          transforms.Resize(size=self.lung_input_size,
@@ -650,7 +650,7 @@ class CovidScoringNet:
     def predict_masks(self, source_img):
         lung_img = torch.unsqueeze(self.preprocess_image_lung(source_img), dim=0).to(self.device)
 
-        if self.flag_type == 'no_crop':
+        if self.crop_type == 'no_crop':
             covid_img = torch.unsqueeze(self.preprocess_image_covid(source_img), dim=0).to(self.device)
 
             mask_lungs = self.lungs_segmentation(lung_img)[0, 0, :, :].cpu().detach().numpy()
@@ -666,7 +666,7 @@ class CovidScoringNet:
             mask_covid = cv2.resize(mask_covid, (512, 512))
             return mask_lungs, mask_covid
 
-        if self.flag_type == 'crop':
+        if self.crop_type == 'crop':
             mask_lungs = self.lungs_segmentation(lung_img).permute(0, 2, 3, 1).cpu().detach().numpy()[0, :, :, :] > 0.5
             crop_lungs = source_img * mask_lungs
 
@@ -682,7 +682,7 @@ class CovidScoringNet:
             mask_lungs = cv2.resize(mask_lungs[:, :, 0].astype(np.uint8), (512, 512))
             return mask_lungs, mask_covid
 
-        if self.flag_type == 'single_crop':
+        if self.crop_type == 'single_crop':
             mask_lungs = self.lungs_segmentation(lung_img).permute(0, 2, 3, 1).cpu().detach().numpy()[0, :, :, :] > 0.5
             mask_lungs = filter_img(mask_lungs, contour_area=6000)
             mask_lungs = np.expand_dims(mask_lungs, 2)
