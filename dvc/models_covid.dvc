@@ -1,0 +1,6 @@
+wdir: ../models
+outs:
+- md5: 1e7035e29fbc538c4790123e428ac831.dir
+  size: 1086506773
+  nfiles: 9
+  path: models_covid
