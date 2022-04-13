@@ -1,8 +1,14 @@
-# Automatic scoring of COVID-19 severity in X-ray
+# Scoring of COVID-19 severity in X-ray imaging
+## Summary
 In this project, we propose a two-stage workflow used for the segmentation and scoring of lung diseases. The workflow inherits quantification, qualification, and visual assessment of lung diseases on X-ray images estimated by radiologists and clinicians. It requires the fulfillment of two core stages devoted to lung and disease segmentation as well as an additional post-processing stage devoted to scoring. The latter integrated block is utilized, mainly, for the estimation of segment scores and computes the overall severity score of a patient. The models of the proposed workflow were trained and tested on four publicly available X-ray datasets of COVID-19 patients and two X-ray datasets of patients with no pulmonary pathology.  Based on a combined dataset consisting of 580 COVID-19 patients and 784 patients with no disorders, our best-performing algorithm is based on a combination of DeepLabV3+, for lung segmentation, and MA-Net, for disease segmentation. The proposed algorithms’ mean absolute error (MAE) of 0.30 is significantly reduced in comparison to established COVID-19 algorithms; BS-net and COVID-Net-S, possessing MAEs of 2.52 and 1.83 respectively. Moreover, the proposed two-stage workflow was not only more accurate but also computationally efficient, it was approximately 11 times faster than the mentioned methods. In summary, we proposed an accurate, time-efficient, and versatile approach for segmentation and scoring of lung diseases illustrated for COVID-19 and with broader future applications for pneumonia, tuberculosis, pneumothorax, amongst others.
+
+## Contribution
+To determine the most optimal workflow we evaluated nine state-of-the-art lung and disease segmentation networks and found the best performing configurations as determined by the combined accuracy and complexity. The latter is of particular importance as it allows the broader scientific community to adopt the determined hyper-parameters for further research, extending beyond the scope of this work. To study algorithm performance, we collected, cleaned, and pre-processed three lung segmentation datasets as well as four disease segmentation and scoring datasets acquired for COVID-19 and pneumonia-infected patients. The datasets are made publicly available ([Chest X-ray dataset for lung segmentation](https://data.mendeley.com/datasets/8gf9vpkhgy/1) and [Dataset for COVID-19 segmentation and severity scoring](https://data.mendeley.com/datasets/36fjrg9s69/1)). We compared our results against two known tailor-made solutions, [BS-net](https://www.sciencedirect.com/science/article/pii/S136184152100092X) and [COVID-Net-S](https://www.nature.com/articles/s41598-021-88538-4). The obtained [segmentation models ](https://github.com/quantori/prj-covid-scoring/tree/readme/models) are also made publicly available on Git LFS.
 
 ## Data
 ### Stage I: Lung Segmentation
+
+
 Table 1. Description of the datasets used for lung segmentation
 
 |                                   **Dataset**                                   | **Training** | **Validation** | **Testing** |  **Total**  |
@@ -25,12 +31,20 @@ Table 2. Description of the datasets used for COVID-19 segmentation and scoring
 |    [RSNA](https://www.kaggle.com/c/rsna-pneumonia-detection-challenge)    	     |    0      	    |   353    	   |   282     	    |    35       	    |   36     	    | 353 / 26%  	  |
 |                                   Total    	                                    |  580 / 43%  	  | 784 / 57% 	  | 1089 / 80%  	  |  136 / 10%   	   | 139 / 10%  	  | 1364 / 100% 	 |
 
-## Methods
-### Stage I: Lung Segmentation
-![Stage I](media/stage_1.png "Stage I")
+## Workflow overview
+![Workflow](media/workflow.png "Workflow")
+<center>Figure 1. Schematic illustration of the proposed workflow</center>
 
-### Stage II: Disease Segmentation and Scoring
-![Stage II](media/stage_2.png "Stage II")
+## Results
+![Overall comparison](media/overall_comparison.png "Overall comparison")
+<center>Figure 2. Overall comparison of the obtained solutions</center>
 
-### Post-processing: Score Estimation
-![Post-processing](media/post_processing.png "Post-processing")
+|                                                  |                                        |                                               |
+|:------------------------------------------------:|:--------------------------------------:|:---------------------------------------------:|
+|         ![U-net](media/Unet.png "U-net")         | ![U-net++](media/Unet++.png "U-net++") | ![DeepLabV3](media/DeepLabV3.png "DeepLabV3") |
+|        (a) U-net </br> Severity score: 4         |  (b) U-net++ </br> Severity score: 5   |     (c) DeepLabV3 </br> Severity score: 0     |
+| ![DeepLabV3+](media/DeepLabV3+.png "DeepLabV3+") |      ![FPN](media/FPN.png "FPN")       |    ![Linknet](media/Linknet.png "Linknet")    |
+|      (d) DeepLabV3+ </br> Severity score: 3      |    (e) FPN </br> Severity score: 4     |      (f) Linknet </br> Severity score: 3      |
+|       ![PSPNet](media/PSPNet.png "PSPNet")       |      ![PAN](media/PAN.png "PAN")       |       ![MAnet](media/MAnet.png "MAnet")       |
+|        (g) PSPNet </br> Severity score: 3        |    (h) PAN </br> Severity score: 5     |      (i) MA-Net </br> Severity score: 5       |
+<center>Figure 3. Comparison of the segmentation and severity score estimation of a COVID-19 subject from the ACCD dataset. A cyan delineation refers to the lung segmentation obtained by Stage I; a red mask is a disease mask obtained by Stage II; a yellow mask refers to the ground-truth segmentation of the disease</center>
