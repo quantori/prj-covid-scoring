@@ -7,8 +7,6 @@ To determine the most optimal workflow we evaluated nine state-of-the-art lung a
 
 ## Data
 ### Stage I: Lung Segmentation
-
-
 Table 1. Description of the datasets used for lung segmentation
 
 |                                   **Dataset**                                   | **Training** | **Validation** | **Testing** |  **Total**  |
@@ -33,11 +31,15 @@ Table 2. Description of the datasets used for COVID-19 segmentation and scoring
 
 ## Workflow overview
 ![Workflow](media/workflow.png "Workflow")
-<center>Figure 1. Schematic illustration of the proposed workflow</center>
+<p align="center">
+    Figure 1. Schematic illustration of the proposed workflow
+</p>
 
 ## Results
 ![Overall comparison](media/overall_comparison.png "Overall comparison")
-<center>Figure 2. Overall comparison of the obtained solutions</center>
+<p align="center">
+    Figure 2. Overall comparison of the obtained solutions
+</p>
 
 |                                                  |                                        |                                               |
 |:------------------------------------------------:|:--------------------------------------:|:---------------------------------------------:|
@@ -47,4 +49,6 @@ Table 2. Description of the datasets used for COVID-19 segmentation and scoring
 |      (d) DeepLabV3+ </br> Severity score: 3      |    (e) FPN </br> Severity score: 4     |      (f) Linknet </br> Severity score: 3      |
 |       ![PSPNet](media/PSPNet.png "PSPNet")       |      ![PAN](media/PAN.png "PAN")       |       ![MAnet](media/MAnet.png "MAnet")       |
 |        (g) PSPNet </br> Severity score: 3        |    (h) PAN </br> Severity score: 5     |      (i) MA-Net </br> Severity score: 5       |
-<center>Figure 3. Comparison of the segmentation and severity score estimation of a COVID-19 subject from the ACCD dataset. A cyan delineation refers to the lung segmentation obtained by Stage I; a red mask is a disease mask obtained by Stage II; a yellow mask refers to the ground-truth segmentation of the disease</center>
+<p align="center">
+    Figure 3. Comparison of the segmentation and severity score estimation of a COVID-19 subject from the ACCD dataset. A cyan delineation refers to the lung segmentation obtained by Stage I; a red mask is a disease mask obtained by Stage II; a yellow mask refers to the ground-truth segmentation of the disease</center>
+</p>
