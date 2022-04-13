@@ -19,15 +19,15 @@ Table 1. Description of the datasets used for lung segmentation
 ### Stage II: Disease Segmentation and Scoring
 Table 2. Description of the datasets used for COVID-19 segmentation and scoring
 
-|                                 **Dataset** 	                                 | **COVID-19** | **Normal** | **Training** | **Validation**  | **Testing** |  **Total**  |
-|:-----------------------------------------------------------------------------:|:------------:|------------|:------------:|:---------------:|:-----------:|:-----------:|
-|     [ACCD](https://github.com/agchung/Actualmed-COVID-chestxray-dataset)      |      49      | 0          |      39      |        5        |      5      |   49 / 4%   |
-|   [CRD](https://www.kaggle.com/tawsifurrahman/covid19-radiography-database)   |     104      | 0          |      83      |       10        |     11      |  104 / 8%   |
-|          [CCXD](https://github.com/ieee8023/covid-chestxray-dataset)          |     399      | 0          |     319      |       40        |     40      |  399 / 29%  |
-|      [FCXD](https://github.com/agchung/Figure1-COVID-chestxray-dataset)       |      28      | 0          |      22      |        3        |      3      |   28 / 2%   |
-| [CXN](https://www.kaggle.com/datasets/paultimothymooney/chest-xray-pneumonia) |      0       | 431        |     344      |       43        |     44      |  431 / 31%  |
-|      [RSNA](https://www.kaggle.com/c/rsna-pneumonia-detection-challenge)      |      0       | 353        |     282      |       35        |     36      |  353 / 26%  |
-|                                     Total                                     |  580 / 43%   | 784 / 57%  |  1089 / 80%  |    136 / 10%    |  139 / 10%  | 1364 / 100% |
+|                                 **Dataset** 	                                 | **COVID-19** | **Normal**  | **Training** | **Validation**  | **Testing** |  **Total**  |
+|:-----------------------------------------------------------------------------:|:------------:|:-----------:|:------------:|:---------------:|:-----------:|:-----------:|
+|     [ACCD](https://github.com/agchung/Actualmed-COVID-chestxray-dataset)      |      49      |      0      |      39      |        5        |      5      |   49 / 4%   |
+|   [CRD](https://www.kaggle.com/tawsifurrahman/covid19-radiography-database)   |     104      |      0      |      83      |       10        |     11      |  104 / 8%   |
+|          [CCXD](https://github.com/ieee8023/covid-chestxray-dataset)          |     399      |      0      |     319      |       40        |     40      |  399 / 29%  |
+|      [FCXD](https://github.com/agchung/Figure1-COVID-chestxray-dataset)       |      28      |      0      |      22      |        3        |      3      |   28 / 2%   |
+| [CXN](https://www.kaggle.com/datasets/paultimothymooney/chest-xray-pneumonia) |      0       |     431     |     344      |       43        |     44      |  431 / 31%  |
+|      [RSNA](https://www.kaggle.com/c/rsna-pneumonia-detection-challenge)      |      0       |     353     |     282      |       35        |     36      |  353 / 26%  |
+|                                     Total                                     |  580 / 43%   |  784 / 57%  |  1089 / 80%  |    136 / 10%    |  139 / 10%  | 1364 / 100% |
 
 ## Workflow overview
 ![Workflow](media/workflow.png "Workflow")
