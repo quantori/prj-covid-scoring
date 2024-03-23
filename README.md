@@ -8,8 +8,6 @@
 - [Summary](#summary)
 - [Contribution](#contribution)
 - [Data](#data)
-  - [Stage I: Lung Segmentation](#stage-1)
-  - [Stage II: Disease Segmentation and Scoring](#stage-2)
 - [Methods](#methods)
 - [Results](#results)
 - [Conclusion](#conclusion)
@@ -25,9 +23,11 @@ To determine the most optimal workflow we evaluated nine state-of-the-art lung a
 
 <a name="data"></a>
 ## 📁 Data
-<a name="stage-1"></a>
-### Stage I: Lung Segmentation
-Table 1. Description of the datasets used for lung segmentation
+
+In the proposed workflow, Stage I focuses on lung segmentation, where we curated and pre-processed three publicly available datasets: Darwin, Montgomery, and Shenzhen (<a href="#table-1">Table 1</a>). These datasets contain chest X-rays from patients diagnosed with COVID-19, pneumonia, or tuberculosis, serving as valuable resources for model training. Moving to Stage II, dedicated to disease segmentation and scoring, we collected and pre-processed four COVID-19 datasets, namely Actualmed COVID-19 Chest X-ray Dataset (ACCD), COVID-19 Radiography Database (CRD), COVID Chest X-Ray Dataset (CCXD), and Fig. 1 COVID Chest X-ray Dataset (FCXD) (<a href="#table-2">Table 2</a>). These datasets encompass CXRs from individuals diagnosed with COVID-19, sourced from over 40 medical institutions and hospitals. Additionally, to enhance network generalization, we included subjects with no pathological findings, ensuring a comprehensive training regime.
+
+
+<p align="right"><i><strong id="table-1">Table 1.</strong> Description of the datasets used for lung segmentation</i></p>
 
 |                                   **Dataset**                                   | **Training** | **Validation** | **Testing** |  **Total**  |
 |:-------------------------------------------------------------------------------:|:------------:|:--------------:|:-----------:|:-----------:|
@@ -36,9 +36,8 @@ Table 1. Description of the datasets used for lung segmentation
 |   [Shenzhen](https://www.kaggle.com/raddar/tuberculosis-chest-xrays-shenzhen)   |     452      |       57       |     57      |  566 / 8%   |
 |                                      Total                                      |  5446 / 80%  |   682 / 10%    |  682 / 10%  | 6810 / 100% |
 
-<a name="stage-2"></a>
-### Stage II: Disease Segmentation and Scoring
-Table 2. Description of the datasets used for COVID-19 segmentation and scoring
+
+<p align="right"><i><strong id="table-2">Table 2.</strong> Description of the datasets used for COVID-19 segmentation and scoring</i></p>
 
 |                                 **Dataset** 	                                 | **COVID-19** | **Normal**  | **Training** | **Validation**  | **Testing** |  **Total**  |
 |:-----------------------------------------------------------------------------:|:------------:|:-----------:|:------------:|:---------------:|:-----------:|:-----------:|
@@ -53,21 +52,29 @@ Table 2. Description of the datasets used for COVID-19 segmentation and scoring
 <a name="methods"></a>
 ## Methods
 
-The proposed workflow inherits the quantification and qualification of lung diseases (scoring and decision-making) from expert radiologists, and fulfills the following processing steps, as shown in Figure 1:
+The proposed workflow inherits the quantification and qualification of lung diseases (scoring and decision-making) from expert radiologists, and fulfills the following processing steps, as shown in <a href="#figure-1">Figure 1</a>:
 - Lung segmentation: pixel-level localization of the lungs and removal of unnecessary areas; 
 - Disease segmentation: pixel-level localization of the infected area of the lungs; 
 - Severity scoring: quantification and qualification of the infected area of the lungs.
 
-![Workflow](media/workflow.png "Workflow")
 <p align="center">
-    Figure 1. Schematic illustration of the proposed workflow
+  <img id="figure-1" width="100%" height="100%" src="media/workflow.png" alt="Proposed method">
+</p>
+
+<p align="center">
+    <em><strong>Figure 1.</strong> Schematic illustration of the proposed workflow.</em>
 </p>
 
 <a name="results"></a>
 ## Results
-![Overall comparison](media/overall_comparison.png "Overall comparison")
+
+For the overall comparison of the proposed solutions, we showcase MAE estimated on the testing subset, the frame rate (FPS), the number of overall parameters, and MAC in <a href="#figure-2">Figure 2</a>. The Y-axes “Parameters” and “MAC” refer to the overall number of parameters and the theoretical amount of multiply-accumulate operations for both stages of the proposed workflow. Similar to the accuracy estimation, we choose DeepLabV3+ as the core network of Stage I. In Stage II we tested nine networks. All networks were tested in the evaluation mode meaning that (a) normalization or dropout layers work in evaluation mode instead of training; (b) the automatic differentiation engine is deactivated. Adoption of the evaluation mode reduces memory usage and speeds up computations turning the back-propagation over the network. The main GPU used for testing is NVIDIA RTX 2080 Ti 11 Gb. The best performance (12.5 images/s) resulted in a proposed pipeline consisting of DeepLabV3+ (Stage I) and PSPNet (Stage II) whilst ranking sixth by MAE of the severity score. The most accurate solution consisted of DeepLabV3+ (Stage I) and MA-Net (Stage II), ranking eighth in the level of performance (7.9 images/s). On the other hand, the prediction speed of the tailor-made solutions, BS-net and COVID-Net-S, turned out to be the lowest making up 0.7 and 0.6 images/s respectively.
+
 <p align="center">
-    Figure 2. Overall comparison of the obtained solutions
+  <img id="figure-2" width="100%" height="100%" src="media/overall_comparison.png" alt="Overall comparison">
+</p>
+<p align="center">
+    <em><strong>Figure 2.</strong> Overall comparison of the obtained solutions.</em>
 </p>
 
 |                                                  |                                        |                                               |
@@ -78,14 +85,14 @@ The proposed workflow inherits the quantification and qualification of lung dise
 |      (d) DeepLabV3+ </br> Severity score: 3      |    (e) FPN </br> Severity score: 4     |      (f) Linknet </br> Severity score: 3      |
 |       ![PSPNet](media/PSPNet.png "PSPNet")       |      ![PAN](media/PAN.png "PAN")       |       ![MAnet](media/MAnet.png "MAnet")       |
 |        (g) PSPNet </br> Severity score: 3        |    (h) PAN </br> Severity score: 5     |      (i) MA-Net </br> Severity score: 5       |
-<p align="center">
-    Figure 3. Comparison of the segmentation and severity score estimation of a COVID-19 subject from the ACCD dataset. A cyan delineation refers to the lung segmentation obtained by Stage I; a red mask is a disease mask obtained by Stage II; a yellow mask refers to the ground-truth segmentation of the disease</center>
+<p align="left">
+    <em><strong>Figure 3.</strong> Comparison of the segmentation and severity score estimation of a COVID-19 subject from the ACCD dataset. A cyan delineation refers to the lung segmentation obtained by Stage I; a red mask is a disease mask obtained by Stage II; a yellow mask refers to the ground-truth segmentation of the disease.</em>
 </p>
 
 <a name="conclusion"></a>
 ## 🏁 Conclusion
 
-In this study, we present a workflow for scoring and segmenting lung diseases, inspired by clinical practices for assessing lung infections from X-ray images. Our approach involves two core stages: lung and disease mask generation, followed by severity score estimation. We evaluated nine neural networks and found DeepLabV3 + for lung segmentation and MA-Net for disease segmentation to be the most accurate. Compared to BS-net and COVID-Net-S, our approach offers greater stability and faster prediction times.
+In this study, we present a workflow for scoring and segmenting lung diseases, inspired by clinical practices for assessing lung infections from X-ray images. Our approach involves two core stages: lung and disease mask generation, followed by severity score estimation. We evaluated nine neural networks and found DeepLabV3+ for lung segmentation and MA-Net for disease segmentation to be the most accurate. Compared to BS-net and COVID-Net-S, our approach offers greater stability and faster prediction times.
 
 <a name="how-to-cite"></a>
 ## 🖊️ How to Cite
