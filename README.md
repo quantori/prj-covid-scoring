@@ -1,7 +1,7 @@
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.8393556.svg)](https://zenodo.org/doi/10.5281/zenodo.8393555)
 [![DOI](http://img.shields.io/badge/DOI-10.1038/s41598.022.15013.z-B31B1B.svg)](https://www.nature.com/articles/s41598-022-15013-z)
 
-# Scoring of COVID-19 severity in X-ray imaging
+# Automatic scoring of COVID-19 severity in X-ray imaging based on a novel deep learning workflow
 
 <a name="table-of-contents"></a>
 ## 📖 Contents
