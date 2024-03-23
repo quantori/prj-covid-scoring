@@ -1,4 +1,5 @@
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.8393556.svg)](https://doi.org/10.5281/zenodo.8393556)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.8393556.svg)](https://zenodo.org/doi/10.5281/zenodo.8393555)
+[![DOI](http://img.shields.io/badge/DOI-10.1038/s41598.022.15013.z-B31B1B.svg)](https://www.nature.com/articles/s41598-022-15013-z)
 
 # Scoring of COVID-19 severity in X-ray imaging
 ## Summary
