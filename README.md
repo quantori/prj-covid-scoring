@@ -11,6 +11,7 @@
 - [Methods](#methods)
 - [Results](#results)
 - [Conclusion](#conclusion)
+- [Data Access](#data-access)
 - [How to Cite](#how-to-cite)
 
 <a name="summary"></a>
@@ -93,6 +94,14 @@ For the overall comparison of the proposed solutions, we showcase MAE estimated 
 ## 🏁 Conclusion
 
 In this study, we present a workflow for scoring and segmenting lung diseases, inspired by clinical practices for assessing lung infections from X-ray images. Our approach involves two core stages: lung and disease mask generation, followed by severity score estimation. We evaluated nine neural networks and found DeepLabV3+ for lung segmentation and MA-Net for disease segmentation to be the most accurate. Compared to BS-net and COVID-Net-S, our approach offers greater stability and faster prediction times.
+
+<a name="data-access"></a>
+## 🔐 Data Access
+
+All essential components of the study, including the curated dataset and trained models, have been made publicly available:
+- Dataset for lung segmentation: [https://data.mendeley.com/datasets/8gf9vpkhgy/1](https://data.mendeley.com/datasets/8gf9vpkhgy/1).
+- Dataset for COVID-19 segmentation and severity scoring: [https://data.mendeley.com/datasets/36fjrg9s69/1](https://data.mendeley.com/datasets/36fjrg9s69/1).
+- Models: [https://zenodo.org/doi/10.5281/zenodo.8393555](https://zenodo.org/doi/10.5281/zenodo.8393555).
 
 <a name="how-to-cite"></a>
 ## 🖊️ How to Cite
