@@ -99,7 +99,7 @@ In this study, we present a workflow for scoring and segmenting lung diseases, i
 ## 🔐 Data Access
 
 All essential components of the study, including the curated dataset and trained models, have been made publicly available:
-- Dataset for lung segmentation: [https://data.mendeley.com/datasets/8gf9vpkhgy/1](https://data.mendeley.com/datasets/8gf9vpkhgy/1).
+- Dataset for lung segmentation: [https://data.mendeley.com/datasets/8gf9vpkhgy/2](https://data.mendeley.com/datasets/8gf9vpkhgy/2).
 - Dataset for COVID-19 segmentation and severity scoring: [https://data.mendeley.com/datasets/36fjrg9s69/1](https://data.mendeley.com/datasets/36fjrg9s69/1).
 - Models: [https://zenodo.org/doi/10.5281/zenodo.8393555](https://zenodo.org/doi/10.5281/zenodo.8393555).
 
