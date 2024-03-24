@@ -10,6 +10,8 @@
 - [Methods](#methods)
 - [Results](#results)
 - [Conclusion](#conclusion)
+- [Requirements](#requirements)
+- [Installation](#installation)
 - [Data Access](#data-access)
 - [How to Cite](#how-to-cite)
 
@@ -21,7 +23,7 @@ In this project, we propose a two-stage workflow used for the segmentation and s
 ## 📁 Data
 In the proposed workflow, Stage I focuses on lung segmentation, where we curated and pre-processed three publicly available datasets: Darwin, Montgomery, and Shenzhen (<a href="#table-1">Table 1</a>). These datasets contain chest X-rays from patients diagnosed with COVID-19, pneumonia, or tuberculosis, serving as valuable resources for model training. Moving to Stage II, dedicated to disease segmentation and scoring, we collected and pre-processed four COVID-19 datasets, namely Actualmed COVID-19 Chest X-ray Dataset (ACCD), COVID-19 Radiography Database (CRD), COVID Chest X-Ray Dataset (CCXD), and Fig. 1 COVID Chest X-ray Dataset (FCXD) (<a href="#table-2">Table 2</a>). These datasets encompass CXRs from individuals diagnosed with COVID-19, sourced from over 40 medical institutions and hospitals. Additionally, to enhance network generalization, we included subjects with no pathological findings, ensuring a comprehensive training regime.
 
-<p align="left"><i><strong id="table-1">Table 1.</strong> Description of the datasets used for lung segmentation</i></p>
+<p align="left"><i><strong id="table-1">Table 1.</strong> Description of the datasets used for lung segmentation.</i></p>
 
 |                                   **Dataset**                                   | **Training** | **Validation** | **Testing** |  **Total**  |
 |:-------------------------------------------------------------------------------:|:------------:|:--------------:|:-----------:|:-----------:|
@@ -30,7 +32,7 @@ In the proposed workflow, Stage I focuses on lung segmentation, where we curated
 |   [Shenzhen](https://www.kaggle.com/raddar/tuberculosis-chest-xrays-shenzhen)   |     452      |       57       |     57      |  566 / 8%   |
 |                                      Total                                      |  5446 / 80%  |   682 / 10%    |  682 / 10%  | 6810 / 100% |
 
-<p align="left"><i><strong id="table-2">Table 2.</strong> Description of the datasets used for COVID-19 segmentation and scoring</i></p>
+<p align="left"><i><strong id="table-2">Table 2.</strong> Description of the datasets used for COVID-19 segmentation and scoring.</i></p>
 
 |                                 **Dataset** 	                                 | **COVID-19** | **Normal**  | **Training** | **Validation**  | **Testing** |  **Total**  |
 |:-----------------------------------------------------------------------------:|:------------:|:-----------:|:------------:|:---------------:|:-----------:|:-----------:|
@@ -58,7 +60,7 @@ The proposed workflow inherits the quantification and qualification of lung dise
 </p>
 
 <a name="results"></a>
-## Results
+## 📈 Results
 For the overall comparison of the proposed solutions, we showcase MAE estimated on the testing subset, the frame rate (FPS), the number of overall parameters, and MAC in <a href="#figure-2">Figure 2</a>. The Y-axes “Parameters” and “MAC” refer to the overall number of parameters and the theoretical amount of multiply-accumulate operations for both stages of the proposed workflow. Similar to the accuracy estimation, we choose DeepLabV3+ as the core network of Stage I. In Stage II we tested nine networks. All networks were tested in the evaluation mode meaning that (a) normalization or dropout layers work in evaluation mode instead of training; (b) the automatic differentiation engine is deactivated. Adoption of the evaluation mode reduces memory usage and speeds up computations turning the back-propagation over the network. The main GPU used for testing is NVIDIA RTX 2080 Ti 11 Gb. The best performance (12.5 images/s) resulted in a proposed pipeline consisting of DeepLabV3+ (Stage I) and PSPNet (Stage II) whilst ranking sixth by MAE of the severity score. The most accurate solution consisted of DeepLabV3+ (Stage I) and MA-Net (Stage II), ranking eighth in the level of performance (7.9 images/s). On the other hand, the prediction speed of the tailor-made solutions, BS-net and COVID-Net-S, turned out to be the lowest making up 0.7 and 0.6 images/s respectively.
 
 <p align="center">
@@ -84,12 +86,43 @@ For the overall comparison of the proposed solutions, we showcase MAE estimated 
 ## 🏁 Conclusion
 In this study, we present a workflow for scoring and segmenting lung diseases, inspired by clinical practices for assessing lung infections from X-ray images. Our approach involves two core stages: lung and disease mask generation, followed by severity score estimation. We evaluated nine neural networks and found DeepLabV3+ for lung segmentation and MA-Net for disease segmentation to be the most accurate. Compared to BS-net and COVID-Net-S, our approach offers greater stability and faster prediction times.
 
+<a name="requirements"></a>
+## 💻 Requirements
+- Operating System
+  - [x] macOS
+  - [x] Linux
+  - [x] Windows (limited testing carried out)
+- Python 3.8.x
+- Required core packages: [requirements.txt](https://github.com/ViacheslavDanilov/covid_scoring/blob/master/requirements.txt)
+
+<a name="installation"></a>
+## ⚙ Installation
+**Step 1:** Download and install Miniconda
+``` bash
+wget https://repo.anaconda.com/miniconda/Miniconda3-py38_22.11.1-1-Linux-x86_64.sh
+chmod +x Miniconda3-latest-Linux-x86_64.sh
+./Miniconda3-latest-Linux-x86_64.sh
+```
+
+**Step 2:** Clone the repository
+``` bash
+git clone https://github.com/ViacheslavDanilov/covid_scoring.git
+```
+
+**Step 3:** Create a conda environment and install the requirements
+``` bash
+cd covid_scoring
+conda create --name scoring python=3.8 --no-default-packages --yes
+conda activate scoring
+pip install -r requirements.txt --no-cache-dir
+```
+
 <a name="data-access"></a>
 ## 🔐 Data Access
 All essential components of the study, including the curated dataset and trained models, have been made publicly available:
-- Dataset for lung segmentation: [https://data.mendeley.com/datasets/8gf9vpkhgy/2](https://data.mendeley.com/datasets/8gf9vpkhgy/2).
-- Dataset for COVID-19 segmentation and severity scoring: [https://data.mendeley.com/datasets/36fjrg9s69/1](https://data.mendeley.com/datasets/36fjrg9s69/1).
-- Models: [https://zenodo.org/doi/10.5281/zenodo.8393555](https://zenodo.org/doi/10.5281/zenodo.8393555).
+- **Dataset 1 (lung segmentation):** [https://data.mendeley.com/datasets/8gf9vpkhgy/2](https://data.mendeley.com/datasets/8gf9vpkhgy/2).
+- **Dataset 2 (COVID-19 segmentation and scoring):** [https://data.mendeley.com/datasets/36fjrg9s69/1](https://data.mendeley.com/datasets/36fjrg9s69/1).
+- **Models:** [https://zenodo.org/doi/10.5281/zenodo.8393555](https://zenodo.org/doi/10.5281/zenodo.8393555).
 
 <a name="how-to-cite"></a>
 ## 🖊️ How to Cite
