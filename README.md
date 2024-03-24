@@ -120,9 +120,9 @@ pip install -r requirements.txt --no-cache-dir
 <a name="data-access"></a>
 ## 🔐 Data Access
 All essential components of the study, including the curated dataset and trained models, have been made publicly available:
-- Dataset for lung segmentation: [https://data.mendeley.com/datasets/8gf9vpkhgy/2](https://data.mendeley.com/datasets/8gf9vpkhgy/2).
-- Dataset for COVID-19 segmentation and severity scoring: [https://data.mendeley.com/datasets/36fjrg9s69/1](https://data.mendeley.com/datasets/36fjrg9s69/1).
-- Models: [https://zenodo.org/doi/10.5281/zenodo.8393555](https://zenodo.org/doi/10.5281/zenodo.8393555).
+- **Dataset 1 (lung segmentation):** [https://data.mendeley.com/datasets/8gf9vpkhgy/2](https://data.mendeley.com/datasets/8gf9vpkhgy/2).
+- **Dataset 2 (COVID-19 segmentation and scoring):** [https://data.mendeley.com/datasets/36fjrg9s69/1](https://data.mendeley.com/datasets/36fjrg9s69/1).
+- **Models:** [https://zenodo.org/doi/10.5281/zenodo.8393555](https://zenodo.org/doi/10.5281/zenodo.8393555).
 
 <a name="how-to-cite"></a>
 ## 🖊️ How to Cite
