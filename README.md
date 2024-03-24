@@ -21,7 +21,7 @@ In this project, we propose a two-stage workflow used for the segmentation and s
 ## 📁 Data
 In the proposed workflow, Stage I focuses on lung segmentation, where we curated and pre-processed three publicly available datasets: Darwin, Montgomery, and Shenzhen (<a href="#table-1">Table 1</a>). These datasets contain chest X-rays from patients diagnosed with COVID-19, pneumonia, or tuberculosis, serving as valuable resources for model training. Moving to Stage II, dedicated to disease segmentation and scoring, we collected and pre-processed four COVID-19 datasets, namely Actualmed COVID-19 Chest X-ray Dataset (ACCD), COVID-19 Radiography Database (CRD), COVID Chest X-Ray Dataset (CCXD), and Fig. 1 COVID Chest X-ray Dataset (FCXD) (<a href="#table-2">Table 2</a>). These datasets encompass CXRs from individuals diagnosed with COVID-19, sourced from over 40 medical institutions and hospitals. Additionally, to enhance network generalization, we included subjects with no pathological findings, ensuring a comprehensive training regime.
 
-<p align="right"><i><strong id="table-1">Table 1.</strong> Description of the datasets used for lung segmentation</i></p>
+<p align="left"><i><strong id="table-1">Table 1.</strong> Description of the datasets used for lung segmentation</i></p>
 
 |                                   **Dataset**                                   | **Training** | **Validation** | **Testing** |  **Total**  |
 |:-------------------------------------------------------------------------------:|:------------:|:--------------:|:-----------:|:-----------:|
@@ -30,7 +30,7 @@ In the proposed workflow, Stage I focuses on lung segmentation, where we curated
 |   [Shenzhen](https://www.kaggle.com/raddar/tuberculosis-chest-xrays-shenzhen)   |     452      |       57       |     57      |  566 / 8%   |
 |                                      Total                                      |  5446 / 80%  |   682 / 10%    |  682 / 10%  | 6810 / 100% |
 
-<p align="right"><i><strong id="table-2">Table 2.</strong> Description of the datasets used for COVID-19 segmentation and scoring</i></p>
+<p align="left"><i><strong id="table-2">Table 2.</strong> Description of the datasets used for COVID-19 segmentation and scoring</i></p>
 
 |                                 **Dataset** 	                                 | **COVID-19** | **Normal**  | **Training** | **Validation**  | **Testing** |  **Total**  |
 |:-----------------------------------------------------------------------------:|:------------:|:-----------:|:------------:|:---------------:|:-----------:|:-----------:|
