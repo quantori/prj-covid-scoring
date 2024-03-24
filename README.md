@@ -10,6 +10,8 @@
 - [Methods](#methods)
 - [Results](#results)
 - [Conclusion](#conclusion)
+- [Requirements](#requirements)
+- [Installation](#installation)
 - [Data Access](#data-access)
 - [How to Cite](#how-to-cite)
 
@@ -83,6 +85,37 @@ For the overall comparison of the proposed solutions, we showcase MAE estimated 
 <a name="conclusion"></a>
 ## 🏁 Conclusion
 In this study, we present a workflow for scoring and segmenting lung diseases, inspired by clinical practices for assessing lung infections from X-ray images. Our approach involves two core stages: lung and disease mask generation, followed by severity score estimation. We evaluated nine neural networks and found DeepLabV3+ for lung segmentation and MA-Net for disease segmentation to be the most accurate. Compared to BS-net and COVID-Net-S, our approach offers greater stability and faster prediction times.
+
+<a name="requirements"></a>
+## 💻 Requirements
+- Operating System
+  - [x] macOS
+  - [x] Linux
+  - [x] Windows (limited testing carried out)
+- Python 3.8.x
+- Required core packages: [requirements.txt](https://github.com/ViacheslavDanilov/covid_scoring/blob/master/requirements.txt)
+
+<a name="installation"></a>
+## ⚙ Installation
+**Step 1:** Download and install Miniconda
+``` bash
+wget https://repo.anaconda.com/miniconda/Miniconda3-py38_22.11.1-1-Linux-x86_64.sh
+chmod +x Miniconda3-latest-Linux-x86_64.sh
+./Miniconda3-latest-Linux-x86_64.sh
+```
+
+**Step 2:** Clone the repository
+``` bash
+git clone https://github.com/ViacheslavDanilov/covid_scoring.git
+```
+
+**Step 3:** Create a conda environment and install the requirements
+``` bash
+cd covid_scoring
+conda create --name scoring python=3.8 --no-default-packages --yes
+conda activate scoring
+pip install -r requirements.txt --no-cache-dir
+```
 
 <a name="data-access"></a>
 ## 🔐 Data Access
